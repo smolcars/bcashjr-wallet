@@ -1,5 +1,5 @@
 export type ChainId = "blake" | "btc";
-export type AmountUnit = "sat" | "btc";
+export type AmountUnit = "sat" | "btc" | "bip177";
 export type WalletLockState = "empty" | "locked" | "unlocked";
 export type SplitState =
   | "confirming"

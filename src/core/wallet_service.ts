@@ -325,7 +325,10 @@ export class WalletService {
       next.btcApiUrl = update.btcApiUrl;
     }
     if (update.amountUnit !== undefined) {
-      if (update.amountUnit !== "sat" && update.amountUnit !== "btc") {
+      if (
+        update.amountUnit !== "sat" && update.amountUnit !== "btc" &&
+        update.amountUnit !== "bip177"
+      ) {
         throw new Error("Invalid amount denomination");
       }
       next.amountUnit = update.amountUnit;

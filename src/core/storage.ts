@@ -108,7 +108,7 @@ function validSettings(value: unknown): value is WalletPublicState["settings"] {
     (typeof feeRate === "number" && Number.isFinite(feeRate) && feeRate > 0 &&
       feeRate <= MAX_FEE_RATE);
   return validBackendUrl(value.btcApiUrl) && validBackendUrl(value.blakeApiUrl) &&
-    (value.amountUnit === "btc" || value.amountUnit === "sat") &&
+    (value.amountUnit === "btc" || value.amountUnit === "sat" || value.amountUnit === "bip177") &&
     [value.btcConfirmations, value.blakeConfirmations].every((confirmations) =>
       Number.isSafeInteger(confirmations) &&
       (confirmations as number) >= 0 && (confirmations as number) <= 1_000
@@ -257,7 +257,10 @@ export function parseWalletState(value: unknown): WalletPublicState {
   if (typeof stored.recoveryPhraseAcknowledged !== "boolean") {
     throw new Error("Wallet state is malformed");
   }
-  if (stored.settings.amountUnit !== "btc" && stored.settings.amountUnit !== "sat") {
+  if (
+    stored.settings.amountUnit !== "btc" && stored.settings.amountUnit !== "sat" &&
+    stored.settings.amountUnit !== "bip177"
+  ) {
     throw new Error("Wallet state is malformed");
   }
   const settings = {

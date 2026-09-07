@@ -45,6 +45,30 @@ Deno.test("wallet state loading preserves current settings exactly", () => {
   }
 });
 
+Deno.test("amount units default to BTC and preserve the optional BIP177 setting", () => {
+  if (emptyPublicState().settings.amountUnit !== "btc") {
+    throw new Error("New wallets must still default to BTC");
+  }
+  for (const amountUnit of ["btc", "sat", "bip177"] as const) {
+    const state = emptyPublicState();
+    state.settings.amountUnit = amountUnit;
+    if (parseWalletState(JSON.parse(JSON.stringify(state))).settings.amountUnit !== amountUnit) {
+      throw new Error(`Amount unit was not preserved: ${amountUnit}`);
+    }
+  }
+  for (const amountUnit of ["BTC", "bitcoin", "", null, 177]) {
+    const state = emptyPublicState();
+    state.settings.amountUnit = amountUnit as never;
+    let rejected = false;
+    try {
+      parseWalletState(state);
+    } catch {
+      rejected = true;
+    }
+    if (!rejected) throw new Error(`Invalid amount unit was accepted: ${amountUnit}`);
+  }
+});
+
 Deno.test("confirmation settings default to one and reject invalid targets", () => {
   const defaults = emptyPublicState();
   if (defaults.settings.btcConfirmations !== 1 || defaults.settings.blakeConfirmations !== 1) {

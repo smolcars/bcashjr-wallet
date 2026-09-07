@@ -580,6 +580,35 @@ Deno.test("settings enforce independent fee ceilings, URLs, units, and gap resca
   ) throw new Error("Increasing the gap did not restart recovery");
 });
 
+Deno.test("BIP177 is a persisted display choice and does not change coin values", async () => {
+  const funding = coin("10".repeat(32), 100_000_000, FIXTURE_ADDRESSES[0], true, true);
+  const { repository, service } = await unlockedFixture(baseState([funding]));
+  const original = await repository.loadState();
+  const balances = service.snapshot().balances;
+  for (const amountUnit of ["bip177", "sat", "btc"] as const) {
+    const snapshot = await service.updateSettings({ amountUnit });
+    if (
+      snapshot.settings.amountUnit !== amountUnit ||
+      JSON.stringify(snapshot.balances) !== JSON.stringify(balances)
+    ) throw new Error("Changing the display unit changed the balance or did not take effect");
+    const persisted = parseWalletState(await repository.loadState());
+    if (
+      JSON.stringify(persisted) !== JSON.stringify({
+        ...original,
+        settings: { ...original.settings, amountUnit },
+      })
+    ) throw new Error("Changing the display unit changed other wallet state");
+    const reopened = new WalletService(repository);
+    if ((await reopened.initialize()).settings.amountUnit !== amountUnit) {
+      throw new Error("Reopening the wallet lost the display unit");
+    }
+  }
+  await assertRejects(
+    () => service.updateSettings({ amountUnit: "bitcoin" as never }),
+    "Invalid amount denomination",
+  );
+});
+
 Deno.test("manual full rescan restarts discovery without discarding cached safety state", async () => {
   const retained = coin("10".repeat(32), 50_000, FIXTURE_ADDRESSES[0], true, true);
   const state = baseState([retained]);

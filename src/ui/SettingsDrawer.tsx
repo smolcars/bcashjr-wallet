@@ -87,6 +87,7 @@ export function SettingsDrawer({ snapshot, onClose, onSave }: SettingsDrawerProp
             >
               <option value="sat">Sats</option>
               <option value="btc">BTC</option>
+              <option value="bip177">Bitcoin (BIP177)</option>
             </select>
           </label>
           <div className="two-col">

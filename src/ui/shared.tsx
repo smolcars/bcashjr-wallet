@@ -11,16 +11,17 @@ const stateLabels: Record<SplitState, string> = {
   unknown: "Unknown",
 };
 
-export function formatAmount(value: number, unit: AmountUnit): string {
+export function formatAmount(value: number, unit: AmountUnit, locale?: string): string {
   if (unit === "btc") {
     return `${
-      new Intl.NumberFormat("en-US", {
+      new Intl.NumberFormat(locale, {
         minimumFractionDigits: 8,
         maximumFractionDigits: 8,
       }).format(value / 100_000_000)
     } BTC`;
   }
-  return `${new Intl.NumberFormat("en-US").format(value)} sats`;
+  const integerAmount = new Intl.NumberFormat(locale).format(value);
+  return unit === "bip177" ? `₿ ${integerAmount}` : `${integerAmount} sats`;
 }
 
 export function shorten(value: string, side = 9): string {

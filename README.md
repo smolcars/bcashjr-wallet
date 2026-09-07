@@ -16,9 +16,10 @@ Bitcoin transactions use standard Taproot `SIGHASH_DEFAULT` signatures. BLAKE tr
 - BIP86 receive addresses derived from `m/86'/0'/0'/0/i`.
 - Local password protection using scrypt and XChaCha20-Poly1305.
 - Independent Bitcoin and BLAKE Esplora backends, balances, fee settings, and UTXO selection.
-- Separate BTC and BLAKE confirmation targets (both default to 1), address gap, and BTC or sats
-  display units. The BLAKE target also determines when a split counts as confirmed replay
-  protection.
+- Separate BTC and BLAKE confirmation targets (both default to 1) and address gap. The BLAKE target
+  also determines when a split counts as confirmed replay protection.
+- BTC (default), sats, or [BIP177](https://github.com/bitcoin/bips/blob/master/bip-0177.mediawiki)
+  display units.
 - Sweep-only Taproot transactions with RBF and chain-tip locktime. Every selected UTXO is consumed
   in full; after fees, everything goes to one destination with no change output.
 - P2PKH, P2TR, P2WPKH, and P2WSH destinations.
