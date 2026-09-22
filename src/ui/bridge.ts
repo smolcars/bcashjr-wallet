@@ -1,4 +1,6 @@
 import type {
+  BpubPreview,
+  BpubPreviewRequest,
   BroadcastResult,
   CreateWalletRequest,
   ReplayPreview,
@@ -75,6 +77,11 @@ async function call<T>(method: string, payload?: unknown): Promise<T> {
 }
 
 export const walletApi = {
+  previewBpub: (request: BpubPreviewRequest) => call<BpubPreview>("previewBpub", request),
+  confirmBpub: (id: string, acceptHighFee = false) =>
+    call<WalletSnapshot>("confirmBpub", { id, acceptHighFee }),
+  cancelBpubPreview: (id: string) => call<void>("cancelBpubPreview", { id }),
+  resumeBpub: (id: string) => call<WalletSnapshot>("resumeBpub", { id }),
   snapshot: () => call<WalletSnapshot>("snapshot"),
   createWallet: (request: CreateWalletRequest) => call<CreatedWallet>("createWallet", request),
   restoreWallet: (request: RestoreWalletRequest) => call<CreatedWallet>("restoreWallet", request),

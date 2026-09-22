@@ -124,6 +124,7 @@ class MockEsplora extends EsploraClient {
   utxos = new Map<string, EsploraUtxo[]>();
   usedAddresses = new Set<string>();
   statuses = new Map<string, EsploraTxStatus | null>();
+  statusRawTxs = new Map<string, string | undefined>();
   transactionHexes = new Map<string, string>();
   broadcasts: string[] = [];
   broadcastFailures = new Map<string, Error>();
@@ -179,8 +180,9 @@ class MockEsplora extends EsploraClient {
     return Promise.resolve(structuredClone(this.utxos.get(address) ?? []));
   }
 
-  override transactionStatus(txid: string): Promise<EsploraTxStatus | null> {
+  override transactionStatus(txid: string, rawTx?: string): Promise<EsploraTxStatus | null> {
     if (this.statusFailure) return Promise.reject(this.statusFailure);
+    this.statusRawTxs.set(txid, rawTx);
     return Promise.resolve(structuredClone(this.statuses.get(txid) ?? null));
   }
 
@@ -836,6 +838,54 @@ Deno.test("targeted intent refresh includes replay parents of a protecting split
 
   if (state.intents[0].phase !== "recoverable" || errors.length > 0) {
     throw new Error("A targeted validation left its replay-dependent protection stale");
+  }
+});
+
+Deno.test("ordinary BTC and BLAKE intent checks use their saved raw transactions", async () => {
+  const state = emptyPublicState();
+  const now = new Date().toISOString();
+  const btcTxid = "2c".repeat(32);
+  const blakeTxid = "2d".repeat(32);
+  state.intents = [{
+    id: "00000000-0000-4000-8000-000000000092",
+    kind: "btc-spend",
+    chain: "btc",
+    txid: btcTxid,
+    rawTx: "01000000000000000000",
+    createdAt: now,
+    phase: "broadcast-unknown",
+    inputOutpoints: [`${"2e".repeat(32)}:0`],
+  }, {
+    id: "00000000-0000-4000-8000-000000000093",
+    kind: "blake-unified",
+    chain: "blake",
+    txid: blakeTxid,
+    rawTx: "02000000000000000000",
+    createdAt: now,
+    phase: "broadcast-unknown",
+    inputOutpoints: [`${"2f".repeat(32)}:0`],
+    sharedOutpoints: [],
+    parentReplayIntentIds: [],
+  }];
+  const blake = new MockEsplora("blake");
+  const btc = new MockEsplora("btc");
+  btc.statuses.set(btcTxid, { confirmed: false });
+  blake.statuses.set(blakeTxid, { confirmed: false });
+  const errors: string[] = [];
+
+  await new IntentReconciler(() => state).refreshStatuses(
+    { blake, btc },
+    { blake: blake.tip, btc: btc.tip },
+    errors,
+  );
+
+  if (
+    errors.length > 0 ||
+    btc.statusRawTxs.get(btcTxid) !== state.intents[0].rawTx ||
+    blake.statusRawTxs.get(blakeTxid) !== state.intents[1].rawTx ||
+    state.intents.some((intent) => intent.phase !== "seen")
+  ) {
+    throw new Error("Ordinary intent reconciliation did not preserve its exact raw transaction");
   }
 });
 

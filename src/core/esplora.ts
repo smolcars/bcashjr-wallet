@@ -1,3 +1,6 @@
+import { Transaction } from "@scure/btc-signer";
+import { fromHex } from "./bytes.ts";
+
 export interface EsploraTxStatus {
   confirmed: boolean;
   block_height?: number;
@@ -10,6 +13,18 @@ export interface EsploraUtxo {
   vout: number;
   value: number;
   status: EsploraTxStatus;
+}
+
+export interface EsploraOutspend {
+  spent: boolean;
+  txid?: string | null;
+}
+
+export interface MempoolAcceptance {
+  txid: string;
+  wtxid: string;
+  allowed: boolean;
+  rejectReason: string | null;
 }
 
 export interface EsploraAddressStats {
@@ -270,15 +285,120 @@ export class EsploraClient {
     return value.filter((utxo) => utxo.value > 0);
   }
 
-  async transactionStatus(txid: string): Promise<EsploraTxStatus | null> {
+  async transactionStatus(txid: string, rawTx?: string): Promise<EsploraTxStatus | null> {
     if (!/^[0-9a-f]{64}$/u.test(txid)) throw new Error("Invalid transaction id");
+    // Some backends return { confirmed: false } from /status even for unknown IDs.
+    // Confirmed results are unambiguous. For locally signed intents, test the saved transaction
+    // against the node's mempool without broadcasting it. Other txid-only callers retain the
+    // exact-hex fallback because testmempoolaccept requires the original transaction.
     const response = await this.#request(`/tx/${txid}/status`);
     if (response.status === 404) return null;
     const status = await response.json() as unknown;
     if (!validTxStatus(status)) {
       throw new EsploraError("Backend returned a malformed transaction status");
     }
+    if (status.confirmed) return status;
+    if (rawTx !== undefined) {
+      try {
+        const acceptance = await this.testMempoolAcceptance(rawTx);
+        if (acceptance.txid !== txid) {
+          throw new EsploraError("Backend tested a different transaction");
+        }
+        if (acceptance.allowed) return null;
+        if (
+          acceptance.rejectReason === "txn-already-in-mempool" ||
+          acceptance.rejectReason === "txn-same-nonwitness-data-in-mempool"
+        ) return status;
+        // Any other rejection is ambiguous. In particular, a transaction mined after the
+        // unconfirmed status response can now fail with missing inputs. Fall through to the
+        // exact transaction lookup instead of treating it as absent.
+      } catch (error) {
+        // /txs/test is a mempool/electrs extension rather than baseline Esplora. Preserve
+        // compatibility with custom backends that do not implement it, without hiding an
+        // overloaded or failing endpoint.
+        if (
+          !(error instanceof EsploraError) ||
+          ![404, 405, 501].includes(error.status ?? 0)
+        ) throw error;
+      }
+    }
+    const existence = await this.#request(`/tx/${txid}/hex`);
+    if (existence.status === 404) return null;
+    const observedRawTx = (await existence.text()).trim().toLowerCase();
+    if (!/^(?:[0-9a-f]{2})+$/u.test(observedRawTx) || observedRawTx.length > 2_000_000) {
+      throw new EsploraError("Backend returned malformed transaction hex");
+    }
+    let observedTxid: string;
+    try {
+      observedTxid = Transaction.fromRaw(fromHex(observedRawTx), {
+        allowUnknownInputs: true,
+        allowUnknownOutputs: true,
+      }).id;
+    } catch {
+      throw new EsploraError("Backend returned malformed transaction hex");
+    }
+    if (observedTxid !== txid) {
+      throw new EsploraError("Backend returned transaction hex for a different transaction");
+    }
     return status;
+  }
+
+  async testMempoolAcceptance(rawTx: string): Promise<MempoolAcceptance> {
+    const normalized = rawTx.trim().toLowerCase();
+    if (!/^(?:[0-9a-f]{2})+$/u.test(normalized) || normalized.length > 2_000_000) {
+      throw new Error("Invalid transaction hex");
+    }
+    const response = await this.#request("/txs/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([normalized]),
+    });
+    if (response.status === 404) {
+      throw new EsploraError("Backend does not support mempool acceptance testing", 404);
+    }
+    let value: unknown;
+    try {
+      value = await response.json();
+    } catch {
+      throw new EsploraError("Backend returned malformed mempool acceptance results");
+    }
+    if (!Array.isArray(value) || value.length !== 1) {
+      throw new EsploraError("Backend returned malformed mempool acceptance results");
+    }
+    const result = value[0] as Record<string, unknown> | null;
+    const rejectReason = result?.["reject-reason"];
+    if (
+      !result || typeof result !== "object" ||
+      typeof result.txid !== "string" || !/^[0-9a-f]{64}$/u.test(result.txid) ||
+      typeof result.wtxid !== "string" || !/^[0-9a-f]{64}$/u.test(result.wtxid) ||
+      typeof result.allowed !== "boolean" ||
+      (rejectReason !== undefined && rejectReason !== null &&
+        typeof rejectReason !== "string") ||
+      (result.allowed && rejectReason !== undefined && rejectReason !== null) ||
+      (!result.allowed && typeof rejectReason !== "string")
+    ) {
+      throw new EsploraError("Backend returned malformed mempool acceptance results");
+    }
+    return {
+      txid: result.txid,
+      wtxid: result.wtxid,
+      allowed: result.allowed,
+      rejectReason: typeof rejectReason === "string" ? rejectReason : null,
+    };
+  }
+
+  async transactionOutspends(txid: string): Promise<EsploraOutspend[]> {
+    if (!/^[0-9a-f]{64}$/u.test(txid)) throw new Error("Invalid transaction id");
+    const value = await this.#json<unknown>(`/tx/${txid}/outspends`);
+    if (
+      !Array.isArray(value) || value.some((item) =>
+        !item || typeof item !== "object" ||
+        typeof item.spent !== "boolean" ||
+        (item.spent && (typeof item.txid !== "string" || !/^[0-9a-f]{64}$/u.test(item.txid))) ||
+        (!item.spent && item.txid !== undefined && item.txid !== null)
+      )
+    ) throw new Error("Invalid transaction outspends response");
+    return value;
   }
 
   async transactionHex(txid: string): Promise<string> {

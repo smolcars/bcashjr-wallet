@@ -84,7 +84,7 @@ function sortedCoins(coins: SpendableCoin[]): SpendableCoin[] {
   );
 }
 
-function serializeStripped(tx: UnifiedTransaction): Uint8Array {
+export function serializeStripped(tx: UnifiedTransaction): Uint8Array {
   return concatBytes(
     u32le(tx.version >>> 0),
     compactSize(tx.inputs.length),
@@ -198,6 +198,30 @@ export function createSweepTemplate(
 
 export function signUnifiedSweep(template: SweepTemplate, keychain: Bip86Keychain): SignedSweep {
   if (template.mode !== "blake-unified") throw new Error("Expected a BLAKE unified sweep");
+  return signUnifiedOutputs(template.tx, template.coins, keychain);
+}
+
+/** Sign arbitrary outputs without changing the ordinary sweep builder's policy. */
+export function signUnifiedOutputs(
+  tx: UnifiedTransaction,
+  coins: SpendableCoin[],
+  keychain: Bip86Keychain,
+): SignedSweep {
+  const inputValue = coins.reduce((sum, coin) => sum + coin.value, 0);
+  const outputValue = tx.outputs.reduce((sum, output) => sum + Number(output.amount), 0);
+  if (
+    !Number.isSafeInteger(inputValue) || !Number.isSafeInteger(outputValue) ||
+    outputValue < 0 || outputValue >= inputValue || tx.inputs.length !== coins.length
+  ) {
+    throw new Error("Invalid unified transaction amounts");
+  }
+  for (const [index, coin] of coins.entries()) {
+    validateCoin(coin);
+    if (toHex(tx.inputs[index].txid) !== coin.txid || tx.inputs[index].index !== coin.vout) {
+      throw new Error("Unified input metadata does not match transaction");
+    }
+  }
+  const template = { tx, coins };
   const spentOutputs = template.coins.map((coin) => ({
     amount: BigInt(coin.value),
     script: fromHex(coin.scriptPubKey),
@@ -241,9 +265,9 @@ export function signUnifiedSweep(template: SweepTemplate, keychain: Bip86Keychai
   return {
     rawTx: toHex(raw),
     txid,
-    vsize: template.vsize,
-    fee: template.fee,
-    outputValue: template.outputValue,
+    vsize: Math.ceil((stripped.length * 3 + raw.length) / 4),
+    fee: inputValue - outputValue,
+    outputValue,
   };
 }
 
