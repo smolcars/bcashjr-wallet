@@ -3,6 +3,7 @@ import type { EsploraClient, EsploraTxStatus } from "./esplora.ts";
 import { intentNeedsReconciliation, intentOutpoints, reduceIntent } from "./intent_state.ts";
 import type { ChainId, TransactionIntent, WalletPublicState } from "./types.ts";
 import type { WalletClients } from "./wallet_sync.ts";
+import { publicationForIntent } from "./bpub_state.ts";
 
 export function linkReplayDependencies(
   state: WalletPublicState,
@@ -140,7 +141,7 @@ export class IntentReconciler {
   ): Promise<EsploraTxStatus | null> {
     const state = this.state();
     const intent = findIntent(state, intentId);
-    const status = await client.transactionStatus(intent.txid);
+    const status = await client.transactionStatus(intent.txid, intent.rawTx);
     const observation = intentObservation(status, tipHeight);
     if (status && intent.phase === "abandoned" && refreshedIntentIds) {
       const competitors = state.intents.filter((candidate) =>
@@ -165,6 +166,13 @@ export class IntentReconciler {
           type: "superseded",
           at: observation.checkedAt,
         });
+        const publication = publicationForIntent(state, competitor.id);
+        if (publication?.fundingIntentId === competitor.id) {
+          publication.dataUnspent = null;
+          publication.ownerUnspent = null;
+          publication.lastError =
+            "Funding was superseded by another transaction; the picture was not published.";
+        }
       }
     }
     const index = state.intents.findIndex((candidate) => candidate.id === intentId);
@@ -213,8 +221,12 @@ function dependencyClosure(
   const pending = intents.filter((intent) => relevant.has(intent.id));
   while (pending.length > 0) {
     const intent = pending.pop();
-    if (intent?.kind !== "blake-unified") continue;
-    for (const parentId of intent.parentReplayIntentIds) {
+    const parents = intent?.kind === "blake-bpub-reveal"
+      ? [intent.fundingIntentId]
+      : intent?.kind === "blake-unified"
+      ? intent.parentReplayIntentIds
+      : [];
+    for (const parentId of parents) {
       if (relevant.has(parentId)) continue;
       const parent = intents.find((candidate) => candidate.id === parentId);
       if (!parent) continue;
@@ -248,6 +260,9 @@ function intentInputsAreRecoverable(
       return coin?.btc.backendOk === true && coin.btc.unspent === true;
     });
   }
+  // P2WSH publication outputs are intentionally not in the ordinary Taproot coin cache.
+  // Resume checks their exact UTXOs separately; generic abandonment is not supported.
+  if (intent.kind === "blake-bpub-reveal") return false;
   const shared = new Set(intent.sharedOutpoints);
   return intent.inputOutpoints.every((outpoint) => {
     const coin = coins.get(outpoint);
@@ -258,6 +273,7 @@ function intentInputsAreRecoverable(
 }
 
 function intentLabel(intent: TransactionIntent): string {
+  if (intent.kind === "blake-bpub-reveal") return "BPUB reveal";
   if (intent.kind === "blake-replay") return "BLAKE replay";
   if (intent.kind === "btc-spend") return "BTC spend";
   return intent.sharedOutpoints.length > 0 ? "BLAKE split" : "BLAKE spend";

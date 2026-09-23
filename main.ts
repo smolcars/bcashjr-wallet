@@ -1,6 +1,7 @@
 import { acquireWalletDirectoryLock, FileWalletRepository } from "./src/core/storage.ts";
 import { type AvailableScreenArea, fitWindowToScreen } from "./src/desktop_window.ts";
 import type {
+  BpubPreviewRequest,
   CreateWalletRequest,
   RestoreWalletRequest,
   SpendPreviewRequest,
@@ -27,6 +28,19 @@ await wallet.initialize();
 async function dispatch(request: RpcRequest): Promise<unknown> {
   if (!request || typeof request.method !== "string") throw new Error("Malformed wallet request");
   switch (request.method) {
+    case "previewBpub":
+      return await wallet.previewBpub(request.payload as BpubPreviewRequest);
+    case "confirmBpub":
+      return await wallet.confirmBpub(
+        String((request.payload as { id?: unknown })?.id ?? ""),
+        (request.payload as { acceptHighFee?: unknown })?.acceptHighFee === true,
+      );
+    case "cancelBpubPreview":
+      return await wallet.cancelBpubPreview(
+        String((request.payload as { id?: unknown })?.id ?? ""),
+      );
+    case "resumeBpub":
+      return await wallet.resumeBpub(String((request.payload as { id?: unknown })?.id ?? ""));
     case "snapshot":
       return wallet.snapshot();
     case "createWallet":

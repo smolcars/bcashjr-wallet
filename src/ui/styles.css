@@ -599,6 +599,307 @@ input[type="checkbox"] {
   align-items: center;
   gap: 10px;
 }
+.screen-nav {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+  padding: 3px;
+  border: 1px solid #27323b;
+  border-radius: 10px;
+}
+.screen-nav button {
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 7px;
+  color: #91a1af;
+  background: transparent;
+  font-size: 13px;
+}
+.screen-nav button.active {
+  color: #64dfb0;
+  background: #182b24;
+}
+.wallet-workspace[hidden],
+.bpub-workspace[hidden] {
+  display: none;
+}
+.bpub-workspace {
+  display: grid;
+  gap: 16px;
+}
+.bpub-intro,
+.bpub-card {
+  padding: 22px;
+  min-width: 0;
+}
+.bpub-intro h1 {
+  font-size: 24px;
+  margin: 8px 0;
+}
+.bpub-info-modal {
+  width: min(680px, calc(100% - 48px));
+  margin: auto;
+  color: inherit;
+}
+.bpub-info-modal::backdrop {
+  background: rgba(2,4,6,.78);
+  backdrop-filter: blur(5px);
+}
+.bpub-info-modal h3 {
+  font-size: 16px;
+  margin: 22px 0 8px;
+}
+.bpub-info-modal p {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.bpub-info-modal code {
+  overflow-wrap: anywhere;
+}
+.bpub-intro p,
+.bpub-card p {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.bpub-intro > p + p,
+.bpub-info-modal > p + p,
+.bpub-card > button + p,
+.bpub-card > p + p {
+  margin-top: 12px;
+}
+.bpub-intro > p + button {
+  margin-top: 16px;
+}
+.bpub-card h2 {
+  margin: 0 0 16px;
+  font-size: 19px;
+}
+.bpub-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.bpub-file-input {
+  display: none;
+}
+.bpub-picture {
+  margin: 16px 0;
+}
+.bpub-picture img {
+  width: 100%;
+  height: 240px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #090c10;
+}
+.bpub-picture figcaption {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #91a1af;
+  overflow-wrap: anywhere;
+}
+.bpub-warning {
+  color: #dfb275;
+}
+.bpub-coin-picker {
+  margin: 18px -22px 0;
+  overflow: hidden;
+  border-top: 1px solid #27313a;
+  border-bottom: 1px solid #27313a;
+  background: #0b1014;
+}
+.bpub-coin-toolbar {
+  height: 42px;
+  padding: 0 16px 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #222a32;
+  background: #0d1217;
+  color: #697582;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+}
+.bpub-coin-list {
+  min-height: 112px;
+  max-height: 204px;
+  overflow-y: auto;
+  background: #0b1014;
+}
+.bpub-coin-row {
+  min-height: 68px;
+  padding: 11px 16px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #1f272f;
+}
+.bpub-coin-row:last-child {
+  border-bottom: 0;
+}
+.bpub-coin-row:hover {
+  background: #10161c;
+}
+.bpub-coin-identity,
+.bpub-coin-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bpub-coin-identity code {
+  display: block;
+  color: #c9d1d8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.bpub-coin-row .tx-link:hover code {
+  color: #72dfb0;
+}
+.bpub-coin-identity small,
+.bpub-coin-meta small,
+.bpub-publication small {
+  display: block;
+  color: #5f6b77;
+  font-size: 9px;
+}
+.bpub-coin-meta {
+  align-items: flex-end;
+  font-family: "Cascadia Code", monospace;
+}
+.bpub-coin-meta strong {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.bpub-coin-empty {
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 24px;
+  color: #87939f;
+  text-align: center;
+}
+.bpub-coin-empty strong {
+  font-size: 12px;
+}
+.bpub-coin-empty small {
+  color: #5f6b77;
+  font-size: 10px;
+}
+.bpub-selection-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #222a32;
+  color: #aeb8c1;
+  font-size: 12px;
+}
+.bpub-selection-summary strong {
+  color: #e7edf2;
+  font-family: "Cascadia Code", monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.bpub-option-fields {
+  display: grid;
+  grid-template-columns: minmax(160px, 280px) minmax(100px, 122px);
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+}
+.bpub-option-field {
+  display: block;
+  min-width: 0;
+}
+.bpub-option-label {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.bpub-option-label small {
+  color: #91a1af;
+  font-size: 10px;
+  font-weight: 550;
+}
+.bpub-option-field input {
+  width: 100%;
+}
+.bpub-owner-help {
+  margin-top: 10px;
+}
+.bpub-review-button {
+  margin-top: 18px;
+}
+.bpub-publication {
+  padding: 16px 0;
+  border-top: 1px solid #27323b;
+  overflow-wrap: anywhere;
+}
+.bpub-publication button {
+  margin-top: 12px;
+}
+.bpub-view-picture {
+  margin: 12px 12px 0 0;
+  text-decoration: none;
+}
+.bpub-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.bpub-progress a {
+  color: #64dfb0;
+}
+.bpub-review {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.bpub-review dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  font-size: 13px;
+}
+.bpub-review dd {
+  text-align: right;
+  margin: 0;
+}
+@media (max-width: 700px) {
+  .bpub-columns {
+    grid-template-columns: 1fr;
+  }
+  .screen-nav button {
+    padding: 7px 8px;
+  }
+  .topbar {
+    gap: 8px;
+  }
+  .topbar-status .last-sync {
+    display: none;
+  }
+  .bpub-option-fields {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .bpub-fee-field {
+    max-width: 140px;
+  }
+}
 .count-pill {
   display: inline-flex;
   align-items: center;
@@ -637,7 +938,7 @@ input[type="checkbox"] {
 .dashboard {
   max-width: 1460px;
   margin: 0 auto;
-  padding: 4px 20px 14px;
+  padding: 6px 20px 14px;
 }
 .dashboard-notices {
   /* Keep the floating stack below Sync/Settings/Lock without shifting the cards. */
@@ -695,7 +996,7 @@ input[type="checkbox"] {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  margin: 2px 0 14px;
+  margin: 0 0 14px;
 }
 .balance-card {
   min-height: 134px;
@@ -1134,7 +1435,8 @@ td small {
 }
 
 /* Chain workspace */
-.wallet-workspace {
+.wallet-workspace,
+.bpub-workspace {
   max-width: 1580px;
 }
 .utility-panels {

@@ -132,6 +132,12 @@ export type TransactionIntent =
     parentReplayIntentIds: string[];
   }
   | TransactionIntentBase & {
+    kind: "blake-bpub-reveal";
+    chain: "blake";
+    inputOutpoints: string[];
+    fundingIntentId: string;
+  }
+  | TransactionIntentBase & {
     kind: "btc-spend";
     chain: "btc";
     inputOutpoints: string[];
@@ -175,7 +181,9 @@ export interface RecoveryScanProgress {
 }
 
 export interface WalletPublicState {
-  schema: 1;
+  schema: 2;
+  nextPublicationIndex: number;
+  publications: BpubPublication[];
   createdAt?: string;
   recoveryPhraseAcknowledged: boolean;
   recoveryScanComplete: boolean;
@@ -193,7 +201,8 @@ export interface WalletPublicState {
 }
 
 export interface WalletSnapshot
-  extends Omit<WalletPublicState, "coins" | "sharedProvenance" | "intents"> {
+  extends Omit<WalletPublicState, "coins" | "sharedProvenance" | "intents" | "publications"> {
+  publications: BpubPublicationSummary[];
   lockState: WalletLockState;
   receiveAddress?: WalletAddress;
   canCreateReceiveAddress: boolean;
@@ -291,7 +300,9 @@ export const DEFAULT_SETTINGS: WalletSettings = {
 
 export function emptyPublicState(): WalletPublicState {
   return {
-    schema: 1,
+    schema: 2,
+    nextPublicationIndex: 0,
+    publications: [],
     recoveryPhraseAcknowledged: false,
     recoveryScanComplete: false,
     nextReceiveIndex: 0,
@@ -302,4 +313,67 @@ export function emptyPublicState(): WalletPublicState {
     tips: {},
     settings: { ...DEFAULT_SETTINGS },
   };
+}
+
+export interface BpubPreviewRequest {
+  filename: string;
+  mime: string;
+  dataBase64: string;
+  outpoints: string[];
+  feeRate?: number;
+  ownerValue?: number;
+}
+
+export interface BpubPreview {
+  id: string;
+  expiresAt: string;
+  bpubId: string;
+  filename: string;
+  mime: string;
+  size: number;
+  outpoints: string[];
+  inputValue: number;
+  feeRate: number;
+  fundingFee: number;
+  revealFee: number;
+  fundingVsize: number;
+  revealVsize: number;
+  changeAddress: string;
+  fundingChange: number;
+  revealReturn: number;
+  ownerValue: number;
+  dataValue: number;
+  dataOutputCount: number;
+  highFee: boolean;
+}
+
+export interface BpubPublication {
+  id: string;
+  keyIndex: number;
+  preview: BpubPreview;
+  fundingIntentId: string;
+  revealIntentId: string;
+  witnessScripts: string[];
+  ownerScript: string;
+  /** Last successfully checked special-output balances, never normal spendable coins. */
+  dataUnspent: number | null;
+  ownerUnspent: number | null;
+  checkedAt?: string;
+  lastError?: string;
+}
+
+export interface BpubPublicationSummary {
+  id: string;
+  filename: string;
+  size: number;
+  bpubId: string;
+  fundingTxid: string;
+  revealTxid: string;
+  fundingPhase: IntentPhase;
+  revealPhase: IntentPhase;
+  totalFee: number;
+  dataUnspent: number | null;
+  ownerUnspent: number | null;
+  checkedAt?: string;
+  lastError?: string;
 }
