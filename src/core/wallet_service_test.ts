@@ -1,3 +1,4 @@
+import { deepStrictEqual } from "node:assert/strict";
 import { RawTx, SigHash, Transaction } from "@scure/btc-signer";
 import { fromHex } from "./bytes.ts";
 import {
@@ -589,17 +590,17 @@ Deno.test("BIP177 is a persisted display choice and does not change coin values"
   const balances = service.snapshot().balances;
   for (const amountUnit of ["bip177", "sat", "btc"] as const) {
     const snapshot = await service.updateSettings({ amountUnit });
-    if (
-      snapshot.settings.amountUnit !== amountUnit ||
-      JSON.stringify(snapshot.balances) !== JSON.stringify(balances)
-    ) throw new Error("Changing the display unit changed the balance or did not take effect");
+    deepStrictEqual(snapshot.settings.amountUnit, amountUnit);
+    deepStrictEqual(snapshot.balances, balances, "Changing the display unit changed the balance");
     const persisted = parseWalletState(await repository.loadState());
-    if (
-      JSON.stringify(persisted) !== JSON.stringify({
+    deepStrictEqual(
+      persisted,
+      {
         ...original,
         settings: { ...original.settings, amountUnit },
-      })
-    ) throw new Error("Changing the display unit changed other wallet state");
+      },
+      "Changing the display unit changed other wallet state",
+    );
     const reopened = new WalletService(repository);
     if ((await reopened.initialize()).settings.amountUnit !== amountUnit) {
       throw new Error("Reopening the wallet lost the display unit");
