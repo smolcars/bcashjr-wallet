@@ -1,4 +1,6 @@
 import { ChainVerifier } from "./chain_verifier.ts";
+import { BpubWorkflow } from "./bpub_workflow.ts";
+import type { BpubPreview, BpubPreviewRequest } from "./types.ts";
 import { EsploraClient, normalizeEsploraUrl } from "./esplora.ts";
 import {
   Bip86Keychain,
@@ -71,6 +73,7 @@ export class WalletService {
   #intentWorkflow: IntentWorkflow;
   #spendWorkflow: SpendWorkflow;
   #replayWorkflow: ReplayWorkflow;
+  #bpubWorkflow: BpubWorkflow;
   #syncing: Promise<WalletSnapshot> | null = null;
   #operationQueue: Promise<void> = Promise.resolve();
   #chainVerifier = new ChainVerifier();
@@ -129,6 +132,21 @@ export class WalletService {
       broadcastIntent: (intentId, client) => this.#intentWorkflow.broadcast(intentId, client),
       rebroadcastProtectionChildren: (parentIntentId) =>
         this.#intentWorkflow.rebroadcastProtectionChildren(parentIntentId),
+      now: () => this.now(),
+    });
+    this.#bpubWorkflow = new BpubWorkflow({
+      state: () => this.#state,
+      requireKeychain: () => this.#requireKeychain(),
+      clients: () => this.#clients(),
+      verifiedTip: (chain, client) => this.#chainVerifier.verifiedTip(chain, client),
+      refreshIntentStatuses: (clients, tips, errors, outpoints) =>
+        this.#intentReconciler.refreshStatuses(clients, tips, errors, outpoints),
+      saveWorkingState: () => this.#saveWorkingState(),
+      storePreparedIntent: (intent) => this.#intentWorkflow.storePrepared(intent),
+      transitionIntent: (id, event) => this.#transitionIntent(id, event),
+      broadcastIntent: (id, client) => this.#intentWorkflow.broadcast(id, client),
+      commit: (mutator) => this.#commit(mutator),
+      rebroadcastIntent: (id) => this.#intentWorkflow.rebroadcast(id),
       now: () => this.now(),
     });
   }
@@ -288,6 +306,7 @@ export class WalletService {
       this.#replacePendingRecoveryEntropy(null);
       this.#spendWorkflow.clear();
       this.#replayWorkflow.clear();
+      this.#bpubWorkflow.clear();
       return this.snapshot();
     });
   }
@@ -478,6 +497,7 @@ export class WalletService {
       advanceReceiveAddressAfterConfirmedDeposit(this.#state, this.#keychain);
     }
     if (scan.authoritative) this.#state.lastSyncAt = new Date().toISOString();
+    if (blakeTip) await this.#bpubWorkflow.refreshObservations(clients.blake);
     this.#state.lastSyncError = errors.length ? errors.join("; ") : undefined;
     await this.#saveWorkingState();
     return this.snapshot();
@@ -485,6 +505,28 @@ export class WalletService {
 
   previewSpend(request: SpendPreviewRequest): Promise<SpendPreview> {
     return this.#serialized(() => this.#spendWorkflow.preview(request));
+  }
+
+  previewBpub(request: BpubPreviewRequest): Promise<BpubPreview> {
+    return this.#serialized(() => this.#bpubWorkflow.preview(request));
+  }
+
+  confirmBpub(id: string, acceptHighFee = false): Promise<WalletSnapshot> {
+    return this.#serialized(async () => {
+      await this.#bpubWorkflow.confirm(id, acceptHighFee);
+      return this.snapshot();
+    });
+  }
+
+  cancelBpubPreview(id: string): Promise<void> {
+    return this.#serialized(() => this.#bpubWorkflow.cancel(id));
+  }
+
+  resumeBpub(id: string): Promise<WalletSnapshot> {
+    return this.#serialized(async () => {
+      await this.#bpubWorkflow.resume(id);
+      return this.snapshot();
+    });
   }
 
   confirmSpend(
@@ -562,6 +604,7 @@ export class WalletService {
   #purgeExpiredPreviews(): void {
     this.#spendWorkflow.purgeExpired();
     this.#replayWorkflow.purgeExpired();
+    this.#bpubWorkflow.purgeExpired();
   }
 
   #requireKeychain(): Bip86Keychain {

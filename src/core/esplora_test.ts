@@ -1,4 +1,52 @@
+import { Transaction } from "@scure/btc-signer";
+import { fromHex } from "./bytes.ts";
 import { EsploraClient, EsploraError, type FetchLike } from "./esplora.ts";
+
+Deno.test("Esplora validates BPUB outspends and uses one GET for all outputs", async () => {
+  const id = "11".repeat(32);
+  let requests = 0;
+  const client = new EsploraClient("https://example.invalid/api", (input) => {
+    requests++;
+    if (String(input) !== `https://example.invalid/api/tx/${id}/outspends`) {
+      throw new Error("Wrong outspend endpoint");
+    }
+    return Promise.resolve(Response.json([
+      { spent: false },
+      { spent: false, txid: null, vin: null, status: null },
+      { spent: true, txid: id },
+    ]));
+  });
+  const outputs = await client.transactionOutspends(id);
+  if (
+    requests !== 1 || outputs.length !== 3 || outputs[0].spent || outputs[1].spent ||
+    outputs[1].txid !== null || !outputs[2].spent
+  ) {
+    throw new Error("Unexpected outspend observations");
+  }
+  for (
+    const body of [
+      {},
+      [null],
+      [{ spent: 1 }],
+      [{ spent: false, txid: id }],
+      [{ spent: true }],
+      [{ spent: true, txid: null }],
+      [{ spent: true, txid: 123 }],
+    ]
+  ) {
+    const malformed = new EsploraClient(
+      "https://example.invalid/api",
+      () => Promise.resolve(Response.json(body)),
+    );
+    let rejected = false;
+    try {
+      await malformed.transactionOutspends(id);
+    } catch {
+      rejected = true;
+    }
+    if (!rejected) throw new Error("Malformed outspends accepted");
+  }
+});
 
 Deno.test("Esplora requires HTTPS except on explicit loopback hosts", () => {
   for (
@@ -222,6 +270,293 @@ Deno.test("Esplora validates every transaction-status field", async () => {
   );
   if (JSON.stringify(await client.transactionStatus("14".repeat(32))) !== JSON.stringify(valid)) {
     throw new Error("A complete transaction status was rejected or altered");
+  }
+});
+
+Deno.test("Esplora does not mistake an unknown transaction for an unconfirmed one", async () => {
+  const txid = "15".repeat(32);
+  const requests: string[] = [];
+  const client = new EsploraClient("https://example.invalid/api", (input) => {
+    const path = new URL(String(input)).pathname;
+    requests.push(path);
+    return Promise.resolve(
+      path.endsWith("/status")
+        ? Response.json({ confirmed: false })
+        : new Response("Transaction not found", { status: 404 }),
+    );
+  });
+  if (await client.transactionStatus(txid) !== null) {
+    throw new Error("Unknown transaction was marked present");
+  }
+  if (
+    requests.length !== 2 || requests[0] !== `/api/tx/${txid}/status` ||
+    requests[1] !== `/api/tx/${txid}/hex`
+  ) {
+    throw new Error("An ambiguous status must use the compact existence probe");
+  }
+});
+
+Deno.test("Esplora polls confirmed status without downloading the transaction", async () => {
+  const txid = "16".repeat(32);
+  const paths: string[] = [];
+  const status = { confirmed: true, block_height: 961_649 };
+  const client = new EsploraClient("https://example.invalid/api", (input) => {
+    paths.push(new URL(String(input)).pathname);
+    return Promise.resolve(Response.json(status));
+  });
+  if (JSON.stringify(await client.transactionStatus(txid)) !== JSON.stringify(status)) {
+    throw new Error("Confirmed transaction status was not preserved");
+  }
+  if (paths.length !== 1 || paths[0] !== `/api/tx/${txid}/status`) {
+    throw new Error("Confirmed status polling downloaded transaction data");
+  }
+});
+
+Deno.test("Esplora accepts an existing unconfirmed transaction using its compact hex", async () => {
+  const rawTx = `0100000001${"00".repeat(32)}ffffffff00ffffffff0100000000000000000000000000`;
+  const txid = Transaction.fromRaw(fromHex(rawTx), {
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+  }).id;
+  const paths: string[] = [];
+  const client = new EsploraClient("https://example.invalid/api", (input) => {
+    const path = new URL(String(input)).pathname;
+    paths.push(path);
+    return Promise.resolve(
+      path.endsWith("/status") ? Response.json({ confirmed: false }) : new Response(rawTx),
+    );
+  });
+  const status = await client.transactionStatus(txid);
+  if (!status || status.confirmed) throw new Error("Existing unconfirmed transaction was rejected");
+  if (
+    paths.length !== 2 || paths[0] !== `/api/tx/${txid}/status` ||
+    paths[1] !== `/api/tx/${txid}/hex`
+  ) {
+    throw new Error("Unconfirmed existence check used the wrong endpoints");
+  }
+});
+
+Deno.test("Esplora detects a saved intent in the mempool without downloading it", async () => {
+  const rawTx = `0100000001${"00".repeat(32)}ffffffff00ffffffff0100000000000000000000000000`;
+  const transaction = Transaction.fromRaw(fromHex(rawTx), {
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+  });
+  const requests: Array<{ path: string; method: string; body?: string }> = [];
+  const client = new EsploraClient("https://example.invalid/api", (input, init) => {
+    const path = new URL(String(input)).pathname;
+    requests.push({ path, method: init?.method ?? "GET", body: init?.body?.toString() });
+    if (path.endsWith("/status")) return Promise.resolve(Response.json({ confirmed: false }));
+    if (path.endsWith("/txs/test")) {
+      return Promise.resolve(Response.json([{
+        txid: transaction.id,
+        wtxid: transaction.id,
+        allowed: false,
+        "reject-reason": "txn-already-in-mempool",
+      }]));
+    }
+    throw new Error("Unexpected endpoint");
+  });
+
+  const status = await client.transactionStatus(transaction.id, rawTx);
+  if (!status || status.confirmed) throw new Error("Mempool intent was not observed");
+  if (
+    requests.length !== 2 || requests[0].path !== `/api/tx/${transaction.id}/status` ||
+    requests[1].path !== "/api/txs/test" || requests[1].method !== "POST" ||
+    requests[1].body !== JSON.stringify([rawTx])
+  ) {
+    throw new Error("Saved intent status used the wrong mempool probe");
+  }
+});
+
+Deno.test("Esplora treats an acceptable saved intent as absent", async () => {
+  const rawTx = `0100000001${"00".repeat(32)}ffffffff00ffffffff0100000000000000000000000000`;
+  const transaction = Transaction.fromRaw(fromHex(rawTx), {
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+  });
+  const client = new EsploraClient("https://example.invalid/api", (input) => {
+    const path = new URL(String(input)).pathname;
+    return Promise.resolve(
+      path.endsWith("/status") ? Response.json({ confirmed: false }) : Response.json([{
+        txid: transaction.id,
+        wtxid: transaction.id,
+        allowed: true,
+        "reject-reason": null,
+      }]),
+    );
+  });
+  if (await client.transactionStatus(transaction.id, rawTx) !== null) {
+    throw new Error("An absent acceptable intent was marked present");
+  }
+});
+
+Deno.test("Esplora verifies ambiguous mempool rejection through exact transaction lookup", async () => {
+  const rawTx = `0100000001${"00".repeat(32)}ffffffff00ffffffff0100000000000000000000000000`;
+  const transaction = Transaction.fromRaw(fromHex(rawTx), {
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+  });
+  const paths: string[] = [];
+  const client = new EsploraClient("https://example.invalid/api", (input) => {
+    const path = new URL(String(input)).pathname;
+    paths.push(path);
+    if (path.endsWith("/status")) return Promise.resolve(Response.json({ confirmed: false }));
+    if (path.endsWith("/txs/test")) {
+      return Promise.resolve(Response.json([{
+        txid: transaction.id,
+        wtxid: transaction.id,
+        allowed: false,
+        "reject-reason": "missing-inputs",
+      }]));
+    }
+    return Promise.resolve(new Response(rawTx));
+  });
+
+  const status = await client.transactionStatus(transaction.id, rawTx);
+  if (!status || status.confirmed) {
+    throw new Error("A transaction mined during the status probe was treated as absent");
+  }
+  if (
+    paths.length !== 3 || paths[0] !== `/api/tx/${transaction.id}/status` ||
+    paths[1] !== "/api/txs/test" || paths[2] !== `/api/tx/${transaction.id}/hex`
+  ) {
+    throw new Error("Ambiguous rejection did not use the exact-transaction fallback");
+  }
+});
+
+Deno.test("Esplora retains exact-hex compatibility when mempool testing is unavailable", async () => {
+  const rawTx = `0100000001${"00".repeat(32)}ffffffff00ffffffff0100000000000000000000000000`;
+  const transaction = Transaction.fromRaw(fromHex(rawTx), {
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+  });
+  for (const unsupportedStatus of [404, 405, 501]) {
+    const paths: string[] = [];
+    const client = new EsploraClient("https://example.invalid/api", (input) => {
+      const path = new URL(String(input)).pathname;
+      paths.push(path);
+      if (path.endsWith("/status")) return Promise.resolve(Response.json({ confirmed: false }));
+      if (path.endsWith("/txs/test")) {
+        return Promise.resolve(new Response("Unsupported endpoint", { status: unsupportedStatus }));
+      }
+      return Promise.resolve(new Response(rawTx));
+    });
+    const status = await client.transactionStatus(transaction.id, rawTx);
+    if (!status || status.confirmed) throw new Error("Fallback lost the unconfirmed transaction");
+    if (
+      paths.length !== 3 || paths[0] !== `/api/tx/${transaction.id}/status` ||
+      paths[1] !== "/api/txs/test" || paths[2] !== `/api/tx/${transaction.id}/hex`
+    ) {
+      throw new Error(
+        `Unsupported mempool-test status ${unsupportedStatus} did not use the safe fallback`,
+      );
+    }
+  }
+});
+
+Deno.test("Esplora does not hide genuine mempool-test failures behind the fallback", async () => {
+  const rawTx = `0100000001${"00".repeat(32)}ffffffff00ffffffff0100000000000000000000000000`;
+  const transaction = Transaction.fromRaw(fromHex(rawTx), {
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+  });
+  for (const failureStatus of [400, 429, 500]) {
+    let requests = 0;
+    const client = new EsploraClient("https://example.invalid/api", (input) => {
+      requests++;
+      return Promise.resolve(
+        new URL(String(input)).pathname.endsWith("/status")
+          ? Response.json({ confirmed: false })
+          : new Response("Backend failure", { status: failureStatus }),
+      );
+    });
+    let error: unknown;
+    try {
+      await client.transactionStatus(transaction.id, rawTx);
+    } catch (caught) {
+      error = caught;
+    }
+    if (!(error instanceof EsploraError) || error.status !== failureStatus || requests !== 2) {
+      throw new Error(`Mempool-test failure ${failureStatus} was hidden behind the hex fallback`);
+    }
+  }
+});
+
+Deno.test("Esplora requires mempool acceptance results for the requested intent", async () => {
+  const rawTx = `0100000001${"00".repeat(32)}ffffffff00ffffffff0100000000000000000000000000`;
+  const transaction = Transaction.fromRaw(fromHex(rawTx), {
+    allowUnknownInputs: true,
+    allowUnknownOutputs: true,
+  });
+  for (
+    const result of [
+      [],
+      [{
+        txid: "19".repeat(32),
+        wtxid: "19".repeat(32),
+        allowed: false,
+        "reject-reason": "txn-already-in-mempool",
+      }],
+      [{ txid: transaction.id, wtxid: transaction.id, allowed: false }],
+    ]
+  ) {
+    const client = new EsploraClient("https://example.invalid/api", (input) =>
+      Promise.resolve(
+        new URL(String(input)).pathname.endsWith("/status")
+          ? Response.json({ confirmed: false })
+          : Response.json(result),
+      ));
+    let error: unknown;
+    try {
+      await client.transactionStatus(transaction.id, rawTx);
+    } catch (caught) {
+      error = caught;
+    }
+    if (!(error instanceof EsploraError)) {
+      throw new Error("Malformed or mismatched mempool result was accepted");
+    }
+  }
+});
+
+Deno.test("Esplora rejects malformed or mismatched unconfirmed transaction hex", async () => {
+  const requested = "17".repeat(32);
+  const otherRaw = `0100000001${"00".repeat(32)}ffffffff00ffffffff0100000000000000000000000000`;
+  for (const rawTx of ["01000000", otherRaw]) {
+    const client = new EsploraClient("https://example.invalid/api", (input) =>
+      Promise.resolve(
+        new URL(String(input)).pathname.endsWith("/status")
+          ? Response.json({ confirmed: false })
+          : new Response(rawTx),
+      ));
+    let error: unknown;
+    try {
+      await client.transactionStatus(requested);
+    } catch (caught) {
+      error = caught;
+    }
+    if (!(error instanceof EsploraError)) {
+      throw new Error("Invalid existence proof was accepted");
+    }
+  }
+});
+
+Deno.test("Esplora transaction lookup preserves backend failures, not absence", async () => {
+  for (const status of [429, 500]) {
+    let calls = 0;
+    const client = new EsploraClient("https://example.invalid/api", () => {
+      calls++;
+      return Promise.resolve(new Response("unavailable", { status }));
+    });
+    let error: unknown;
+    try {
+      await client.transactionStatus("18".repeat(32));
+    } catch (caught) {
+      error = caught;
+    }
+    if (!(error instanceof EsploraError) || error.status !== status || calls !== 1) {
+      throw new Error("Backend failure was hidden or retried");
+    }
   }
 });
 

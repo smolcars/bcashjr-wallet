@@ -1,4 +1,5 @@
 import { deriveCoinPolicy } from "./coin_policy.ts";
+import { summarizePublication } from "./bpub_state.ts";
 import { summarizeIntent } from "./intent_state.ts";
 import { observationsAreStale, STALE_OBSERVATIONS_WARNING } from "./observation_freshness.ts";
 import type { WalletLockState, WalletPublicState, WalletSnapshot } from "./types.ts";
@@ -72,11 +73,19 @@ export function buildWalletSnapshot(
       : []),
     ...(state.lastSyncError ? [`Last sync: ${state.lastSyncError}`] : []),
   ];
-  const { coins: _coins, sharedProvenance: _provenance, intents: _intents, ...publicState } =
-    structuredClone(state);
+  const {
+    coins: _coins,
+    sharedProvenance: _provenance,
+    intents: _intents,
+    publications: _publications,
+    ...publicState
+  } = structuredClone(state);
   return {
     ...publicState,
     lockState,
+    publications: lockState === "unlocked"
+      ? state.publications.map((p) => summarizePublication(state, p))
+      : [],
     receiveAddress: receiveAddress ? structuredClone(receiveAddress) : undefined,
     canCreateReceiveAddress,
     outputs,

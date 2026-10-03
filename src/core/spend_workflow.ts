@@ -41,7 +41,7 @@ export interface SpendWorkflowContext {
   verifiedTip(chain: ChainId, client: EsploraClient): Promise<ChainTip>;
   refreshIntentStatuses(
     clients: WalletClients,
-    tipHeights: Record<ChainId, number>,
+    tipHeights: Partial<Record<ChainId, number>>,
     errors: string[],
     relevantOutpoints?: Set<string>,
   ): Promise<void>;

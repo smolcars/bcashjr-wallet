@@ -20,8 +20,8 @@ Bitcoin transactions use standard Taproot `SIGHASH_DEFAULT` signatures. BLAKE tr
   also determines when a split counts as confirmed replay protection.
 - BTC (default), sats, or [BIP177](https://github.com/bitcoin/bips/blob/master/bip-0177.mediawiki)
   display units.
-- Sweep-only Taproot transactions with RBF and chain-tip locktime. Every selected UTXO is consumed
-  in full; after fees, everything goes to one destination with no change output.
+- Ordinary sends use sweep-only Taproot transactions with RBF and chain-tip locktime. Every selected
+  UTXO is consumed in full; after fees, everything goes to one destination with no change output.
 - P2PKH, P2TR, P2WPKH, and P2WSH destinations.
 - BLAKE splitting with `SIGHASH_UNIFIED`. Send shared coins to yourself or another destination to
   move only their BLAKE copies while leaving the Bitcoin outpoints in place.
@@ -30,6 +30,30 @@ Bitcoin transactions use standard Taproot `SIGHASH_DEFAULT` signatures. BLAKE tr
   appeared on BLAKE.
 - Durable recovery for locally signed transactions whose broadcast or confirmation is uncertain.
 - A Deno Desktop application and a local-browser fallback.
+- BLAKE-only BPUB v5 picture publishing with manual coin selection and wallet change.
+
+## BPUB picture publishing
+
+Open **BPUB** in the top-left navigation, choose one PNG, JPEG, GIF or WebP picture (up to 128 KiB),
+select BLAKE coins, and review both transaction fees. Publishing first funds the BPUB outputs and
+then reveals the picture. Both transactions use `SIGHASH_UNIFIED`; no BTC transaction is broadcast.
+Unused funds return to the wallet, unlike ordinary sweep-only sends.
+
+The original file, including embedded metadata, becomes public. BPUB v5 requires a separate
+wallet-controlled ownership output for each item. Its amount is editable per publication (default
+330 sats, also the minimum). This is not a fee and is not included in ordinary spendable coins;
+ownership transfers are not supported yet.
+
+Publication progress and both signed transactions are saved locally before broadcasting. Use **Check
+/ Resume** after an interruption; Sync only checks status. Losing local wallet data before revealing
+can lose the funds committed to data outputs. The recovery phrase alone cannot reconstruct their
+file-specific scripts. Ownership records also require the publication metadata. There is no separate
+publication backup/export feature.
+
+The portable BPUB codec lives in [`src/bpub`](./src/bpub/README.md), separate from wallet signing
+and storage, for future extraction into a JSR/npm library. The reference format is
+[BPUB v5](https://github.com/djkazic/bpub/tree/8b1ff26adf336bbd6a0e8a9f0a8b90f7323cbc62). Wallet
+public-state schema 1 is migrated to schema 2; older wallet versions cannot open schema 2.
 
 ## Transaction safety
 

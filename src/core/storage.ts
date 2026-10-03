@@ -177,6 +177,10 @@ function validIntent(value: unknown): value is TransactionIntent {
       validOutpoints(value.walletOutpoints);
   }
   if (!validOutpoints(value.inputOutpoints)) return false;
+  if (value.kind === "blake-bpub-reveal") {
+    return value.chain === "blake" && typeof value.fundingIntentId === "string" &&
+      INTENT_ID.test(value.fundingIntentId);
+  }
   if (value.kind === "blake-unified") {
     return value.chain === "blake" && Array.isArray(value.sharedOutpoints) &&
       value.sharedOutpoints.every((outpoint) =>
@@ -245,7 +249,16 @@ export function parseWalletState(value: unknown): WalletPublicState {
   if (value === null || value === undefined) return emptyPublicState();
   if (!value || typeof value !== "object") throw new Error("Wallet state is malformed");
   const stored = value as Partial<WalletPublicState>;
-  if (stored.schema !== 1) throw new Error("Wallet state is malformed");
+  if ((stored as { schema?: number }).schema !== 1 && stored.schema !== 2) {
+    throw new Error("Wallet state is malformed");
+  }
+  const legacy = (stored as { schema?: number }).schema === 1;
+  if (
+    !legacy &&
+    (!Array.isArray(stored.publications) || !Number.isSafeInteger(stored.nextPublicationIndex))
+  ) {
+    throw new Error("Wallet publication state is malformed");
+  }
   if (
     !Array.isArray(stored.addresses) || !Array.isArray(stored.coins) ||
     !Array.isArray(stored.intents) || !isRecord(stored.sharedProvenance) ||
@@ -304,7 +317,9 @@ export function parseWalletState(value: unknown): WalletPublicState {
   const discarded = stored.addresses.length - addresses.length + stored.coins.length -
     coins.length;
   const parsed: WalletPublicState = {
-    schema: 1,
+    schema: 2,
+    publications: legacy ? [] : structuredClone(stored.publications!),
+    nextPublicationIndex: legacy ? 0 : stored.nextPublicationIndex!,
     ...(stored.createdAt !== undefined ? { createdAt: stored.createdAt } : {}),
     recoveryPhraseAcknowledged: stored.recoveryPhraseAcknowledged,
     recoveryScanComplete: stored.recoveryScanComplete,

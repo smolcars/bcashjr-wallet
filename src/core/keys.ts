@@ -181,6 +181,17 @@ export class Bip86Keychain {
     };
   }
 
+  /** Separate BIP84 key domain for BPUB control (0) and ownership (1). */
+  bpubPrivateKey(branch: 0 | 1, index: number): Uint8Array {
+    if (
+      !Number.isSafeInteger(index) || index < 0 || index >= 0x8000_0000 ||
+      (branch !== 0 && branch !== 1)
+    ) throw new Error("Invalid BPUB key index");
+    const key = this.#requireRoot().derive(`m/84'/0'/0'/${branch}/${index}`).privateKey;
+    if (!key) throw new Error("Unable to derive BPUB key");
+    return Uint8Array.from(key);
+  }
+
   privateKey(path: string): Uint8Array {
     const root = this.#requireRoot();
     if (!/^m\/86'\/0'\/0'\/[01]\/\d+$/u.test(path)) throw new Error("Unsupported derivation path");

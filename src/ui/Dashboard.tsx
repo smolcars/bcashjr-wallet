@@ -15,6 +15,7 @@ import type {
 } from "../core/types.ts";
 import { AmountUnitProvider } from "./Amount.tsx";
 import { BalanceSummary } from "./BalanceSummary.tsx";
+import { BpubScreen } from "./BpubScreen.tsx";
 import { walletApi } from "./bridge.ts";
 import { ChainPanel } from "./ChainPanel.tsx";
 import { type BroadcastNotice, DashboardNotices } from "./DashboardNotices.tsx";
@@ -36,6 +37,7 @@ function retained(current: Set<string>, available: string[]): Set<string> {
 }
 
 export function Dashboard({ snapshot, setSnapshot }: DashboardProps) {
+  const [page, setPage] = useState<"wallet" | "bpub">("wallet");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedBtc, setSelectedBtc] = useState<Set<string>>(new Set());
   const [selectedBlake, setSelectedBlake] = useState<Set<string>>(new Set());
@@ -66,7 +68,10 @@ export function Dashboard({ snapshot, setSnapshot }: DashboardProps) {
     outputs: snapshot.outputs.filter((output) => output.txid === txid && output.btc.unspent),
   }));
   const recoverableIntents = snapshot.intents.filter((intent) =>
-    intent.canRebroadcast || intent.canAbandon || intent.blockedBy.length > 0
+    (intent.canRebroadcast || intent.canAbandon || intent.blockedBy.length > 0) &&
+    !snapshot.publications.some((p) =>
+      p.fundingTxid === intent.txid || p.revealTxid === intent.txid
+    )
   );
 
   useEffect(() => {
@@ -283,6 +288,26 @@ export function Dashboard({ snapshot, setSnapshot }: DashboardProps) {
     <AmountUnitProvider unit={snapshot.settings.amountUnit}>
       <div className="app-shell">
         <header className="topbar">
+          <nav className="screen-nav" aria-label="Wallet screens">
+            <button
+              type="button"
+              className={page === "wallet" ? "active" : ""}
+              aria-current={page === "wallet" ? "page" : undefined}
+              disabled={Boolean(busy)}
+              onClick={() => setPage("wallet")}
+            >
+              Wallet
+            </button>
+            <button
+              type="button"
+              className={page === "bpub" ? "active" : ""}
+              aria-current={page === "bpub" ? "page" : undefined}
+              disabled={Boolean(busy)}
+              onClick={() => setPage("bpub")}
+            >
+              Blake Spammer
+            </button>
+          </nav>
           <div className="topbar-status">
             <span className="last-sync">
               {snapshot.lastSyncAt
@@ -322,7 +347,7 @@ export function Dashboard({ snapshot, setSnapshot }: DashboardProps) {
           </div>
         </header>
 
-        <main className="dashboard wallet-workspace">
+        <main className="dashboard wallet-workspace" hidden={page !== "wallet"}>
           <BalanceSummary snapshot={snapshot} />
 
           <section className="chain-panels">
@@ -397,6 +422,15 @@ export function Dashboard({ snapshot, setSnapshot }: DashboardProps) {
             />
           </section>
         </main>
+
+        <BpubScreen
+          snapshot={snapshot}
+          active={page === "bpub"}
+          busy={busy}
+          setBusy={setBusy}
+          setSnapshot={setSnapshot}
+          onError={setError}
+        />
 
         <DashboardNotices
           snapshot={snapshot}

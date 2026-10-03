@@ -1,4 +1,5 @@
 import { selectCoins } from "./coin_selection.ts";
+import { publicationForIntent } from "./bpub_state.ts";
 import type { EsploraClient, EsploraTxStatus } from "./esplora.ts";
 import type { Bip86Keychain } from "./keys.ts";
 import { linkReplayDependencies } from "./intent_reconciler.ts";
@@ -43,6 +44,9 @@ export class IntentWorkflow {
   async rebroadcast(intentId: string): Promise<BroadcastResult> {
     this.context.requireKeychain();
     const intent = this.#intent(intentId);
+    if (intent.kind === "blake-bpub-reveal") {
+      throw new Error("Resume this publication from the BPUB screen");
+    }
     const clients = this.context.clients();
     const tip = await this.context.verifiedTip(intent.chain, clients[intent.chain]);
     this.context.state().tips[intent.chain] = tip;
@@ -113,6 +117,11 @@ export class IntentWorkflow {
   async abandon(intentId: string): Promise<void> {
     this.context.requireKeychain();
     const intent = this.#intent(intentId);
+    if (publicationForIntent(this.context.state(), intentId)) {
+      throw new Error(
+        "A signed BPUB publication cannot be abandoned; resume it from the BPUB screen",
+      );
+    }
     const clients = this.context.clients();
     const [blakeTip, btcTip] = await Promise.all([
       this.context.verifiedTip("blake", clients.blake),

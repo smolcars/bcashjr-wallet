@@ -1,5 +1,6 @@
 import { Transaction } from "@scure/btc-signer";
 import { fromHex, toHex } from "./bytes.ts";
+import { assertBpubState } from "./bpub_state.ts";
 import type {
   ChainCoinObservation,
   ChainTxStatus,
@@ -283,6 +284,12 @@ export function assertTransactionIntent(intent: TransactionIntent): void {
   ) {
     throw new Error(`Intent ${intent.txid} input metadata does not match its raw transaction`);
   }
+  if (intent.kind === "blake-bpub-reveal") {
+    if (intent.chain !== "blake" || !INTENT_ID.test(intent.fundingIntentId)) {
+      throw new Error("Invalid BPUB reveal intent");
+    }
+    return;
+  }
   if (intent.kind === "blake-unified") {
     if (intent.chain !== "blake") {
       throw new Error("Unified spend intent is assigned to the wrong chain");
@@ -397,6 +404,7 @@ function allowedActivePair(
 }
 
 export function assertWalletStateInvariants(state: WalletPublicState): void {
+  assertBpubState(state);
   const coinOutpoints = new Set<string>();
   for (const coin of state.coins) {
     if (
@@ -490,7 +498,13 @@ export function summarizeIntent(
         allIntents,
       )
     );
-  const blockedBy = intent.kind === "blake-unified"
+  const blockedBy = intent.kind === "blake-bpub-reveal"
+    ? allIntents.some((i) =>
+        i.id === intent.fundingIntentId && (i.phase === "seen" || i.phase === "confirmed")
+      )
+      ? []
+      : [intent.fundingIntentId]
+    : intent.kind === "blake-unified"
     ? intent.parentReplayIntentIds.filter((id) =>
       !parentReplayAccepted(allIntents.find((candidate) => candidate.id === id))
     )
@@ -518,10 +532,12 @@ export function summarizeIntent(
     createdAt: intent.createdAt,
     lastError: intent.lastError,
     blockedBy,
-    canRebroadcast: blockedBy.length === 0 &&
+    canRebroadcast: intent.kind !== "blake-bpub-reveal" && blockedBy.length === 0 &&
       (intent.phase === "prepared" || intent.phase === "recoverable" ||
         intent.phase === "broadcast-unknown"),
-    canAbandon: (blockedBy.length === 0 || unexposedPrepared) &&
+    canAbandon: intent.kind !== "blake-bpub-reveal" &&
+      !allIntents.some((i) => i.kind === "blake-bpub-reveal" && i.fundingIntentId === intent.id) &&
+      (blockedBy.length === 0 || unexposedPrepared) &&
       !protectsBtcSpend &&
       !(intent.kind === "blake-replay" &&
         intent.walletOutpoints.some((outpoint) => sharedProvenance[outpoint])) &&
