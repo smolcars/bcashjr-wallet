@@ -84,7 +84,7 @@ export function encodeDataKeys(stream: Uint8Array): Uint8Array[] {
 /** BPUB reference: djkazic/bpub @ 8b1ff26adf336bbd6a0e8a9f0a8b90f7323cbc62. */
 export function encodeBpub(
   data: Uint8Array,
-  options: { mime?: string; filename?: string; compress?: boolean },
+  options: { mime?: string; filename?: string; compress?: boolean; maxStreamBytes?: number },
   compression: BpubCompression,
 ): BpubEncoding {
   const id = bpubId(data);
@@ -113,6 +113,9 @@ export function encodeBpub(
     content,
   );
   const stream = concat(be(BigInt(body.length), 4), body);
+  if (options.maxStreamBytes !== undefined && stream.length > options.maxStreamBytes) {
+    throw new Error("Picture exceeds BPUB encoded capacity; resize it or use a smaller picture");
+  }
   return { id, stream, publicKeys: encodeDataKeys(stream) };
 }
 

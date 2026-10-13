@@ -34,10 +34,18 @@ Bitcoin transactions use standard Taproot `SIGHASH_DEFAULT` signatures. BLAKE tr
 
 ## BPUB picture publishing
 
-Open **BPUB** in the top-left navigation, choose one PNG, JPEG, GIF or WebP picture (up to 128 KiB),
-select BLAKE coins, and review both transaction fees. Publishing first funds the BPUB outputs and
-then reveals the picture. Both transactions use `SIGHASH_UNIFIED`; no BTC transaction is broadcast.
-Unused funds return to the wallet, unlike ordinary sweep-only sends.
+Open **BPUB** in the top-left navigation, choose one PNG, JPEG, GIF or WebP picture, select BLAKE
+coins, and review both transaction fees. Publishing first funds the BPUB outputs and then reveals
+the picture. Both transactions use `SIGHASH_UNIFIED`; no BTC transaction is broadcast. Unused funds
+return to the wallet, unlike ordinary sweep-only sends.
+
+A publication can use up to 500 reveal inputs: 217,000 bytes (about 212 KiB) for the encoded stream,
+including headers and metadata. Lossless compression can allow larger original pictures; review
+rejects pictures that exceed encoded capacity. There is no separate original-file size cap. Large
+funding/reveal pairs that exceed the default 101,000-vbyte unconfirmed-chain limit wait for funding
+confirmation. Use **Check / Resume** after it confirms to broadcast the saved reveal. A full
+500-input reveal also exceeds Knots' default 300 KB raw mining template; inclusion requires a miner
+using a larger template within the chain's block-weight budget.
 
 The original file, including embedded metadata, becomes public. BPUB v5 requires a separate
 wallet-controlled ownership output for each item. Its amount is editable per publication (default
@@ -174,6 +182,28 @@ deno task ui:build
 The test suite covers the pinned unified-sighash vectors, BIP39/BIP86 derivation, encrypted secret
 storage, coin policy, Bitcoin and BLAKE signing, supported destinations, multi-input transactions,
 dual-chain synchronization, replay handling, and reorganization recovery.
+
+## Regtest integration tests
+
+With Docker Engine/Compose and Deno installed, run:
+
+```bash
+deno task test:integration
+```
+
+This builds checksum-pinned Bitcoin Core and BLAKE-capable Knots nodes, plus BLAKE-aware electrs and
+mempool backends. Each run uses a unique Compose project, fresh volumes, and random loopback ports;
+it removes its containers and volumes on completion and saves logs under `artifacts/integration/`.
+The first run downloads and compiles dependencies and can take several minutes. Ordinary
+`deno task test` skips this Docker suite.
+
+The suite receives the same pre-fork deposit on both chains, splits with `SIGHASH_UNIFIED`, checks
+Core replay rejection, and publishes a 500-input BPUB picture through the real mempool API. It
+checks ancestor-limit rejection, funding confirmation, restart/resume from disk, reveal acceptance,
+and exact content recovery. See [the integration setup](tests/integration/README.md) for details.
+
+The integration workflow runs on pull requests and pushes to `master`. The Release workflow also
+requires it to pass before building or publishing, including dry runs.
 
 ## Important safety notes
 

@@ -4,3 +4,4 @@ dist/
 *.log
 wallet.json
 secret.json
+artifacts/

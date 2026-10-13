@@ -148,9 +148,8 @@ Deno.test("BPUB budgets high reveal fees in advance and rejects insufficient fun
     keys.destroy();
   }
 });
-Deno.test("BPUB rejects oversized, empty, unsupported and mismatched pictures", () => {
+Deno.test("BPUB rejects empty, unsupported and mismatched pictures", () => {
   validateBpubImage(image, "image/gif", "a.gif");
-  throws(() => validateBpubImage(new Uint8Array(131073), "image/gif", "a.gif"));
   throws(() => validateBpubImage(new Uint8Array(), "image/gif", "a.gif"));
   throws(() => validateBpubImage(image, "image/png", "a.png"));
   throws(() => validateBpubImage(image, "image/gif", "../a.gif"));
@@ -161,7 +160,7 @@ Deno.test("BPUB maximum-size incompressible picture fits the reviewed relay limi
   const keys = keychain();
   try {
     // Deterministic pseudo-random fixture, not wallet entropy.
-    const data = new Uint8Array(128 * 1024);
+    const data = new Uint8Array(216_800);
     let seed = 1;
     for (let i = 0; i < data.length; i++) {
       seed ^= seed << 13;
@@ -186,12 +185,51 @@ Deno.test("BPUB maximum-size incompressible picture fits the reviewed relay limi
       payload,
     );
     if (
-      payload.scripts.length < 300 || payload.scripts.length > 310 ||
+      payload.scripts.length !== 500 ||
       template.revealVsize > 100000 || template.fundingVsize > 100000
     ) {
       throw new Error("Unexpected maximum-size transaction limits");
     }
     signBpub(template, keys, 0);
+  } finally {
+    keys.destroy();
+  }
+});
+
+Deno.test("BPUB enforces encoded capacity and permits larger compressible originals", () => {
+  const keys = keychain();
+  try {
+    const compressible = new Uint8Array(2 * 1024 * 1024);
+    compressible.set(image);
+    validateBpubImage(compressible, "image/gif", "compressible.gif");
+    const small = makeBpubPayload(compressible, "compressible.gif", "image/gif", keys, 0);
+    if (small.scripts.length >= 500) throw new Error("Compression did not reduce input count");
+    const large = new Uint8Array(217000);
+    let seed = 1;
+    for (let i = 0; i < large.length; i++) {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      large[i] = seed & 255;
+    }
+    large.set(image.subarray(0, 6));
+    throws(() => makeBpubPayload(large, "too-big.gif", "image/gif", keys, 0));
+    const a = keys.derive(0, 0);
+    throws(() =>
+      createBpubTemplate(
+        [{
+          txid: "11".repeat(32),
+          vout: 0,
+          value: 20_000_000,
+          path: a.path,
+          scriptPubKey: a.scriptPubKey,
+        }],
+        a.address,
+        1,
+        0,
+        { ...small, scripts: Array(501).fill(small.scripts[0]) },
+      )
+    );
   } finally {
     keys.destroy();
   }

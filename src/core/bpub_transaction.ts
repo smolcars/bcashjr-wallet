@@ -15,7 +15,8 @@ import {
 } from "./bytes.ts";
 import type { Bip86Keychain } from "./keys.ts";
 import {
-  BPUB_MAX_FILE_BYTES,
+  BPUB_MAX_REVEAL_INPUTS,
+  BPUB_MAX_STREAM_BYTES,
   BPUB_MIN_FEE_RATE,
   BPUB_MIN_OWNER_VALUE,
   BPUB_OWNER_VALUE,
@@ -71,6 +72,7 @@ export function makeBpubPayload(
       filename,
       mime,
       compress: bpubCompression.deflate(data).length < data.length,
+      maxStreamBytes: BPUB_MAX_STREAM_BYTES,
     }, bpubCompression);
     return {
       id: encoded.id,
@@ -131,7 +133,7 @@ export function createBpubTemplate(
   }
   const count = payload.scripts.length;
   if (
-    count < 1 || payload.scripts.some((s) => s.length > 513) ||
+    count < 1 || count > BPUB_MAX_REVEAL_INPUTS || payload.scripts.some((s) => s.length > 513) ||
     payload.scripts.reduce((n, s) => n + s[s.length - 2] - 0x50, 0) > 16000
   ) {
     throw new Error("BPUB scripts exceed relay limits");
@@ -242,8 +244,8 @@ export function signBpub(template: BpubTemplate, keychain: Bip86Keychain, keyInd
 
 /** Validate bytes, not just the renderer's MIME claim. Never decode images in the backend. */
 export function validateBpubImage(data: Uint8Array, mime: string, filename: string): void {
-  if (!data.length || data.length > BPUB_MAX_FILE_BYTES) {
-    throw new Error("Choose a picture between 1 byte and 128 KiB");
+  if (!data.length) {
+    throw new Error("Choose a non-empty picture");
   }
   if (
     !filename || new TextEncoder().encode(filename).length > 255 ||

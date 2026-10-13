@@ -1,0 +1,48 @@
+# Every volume belongs to the runner's unique Compose project. No mainnet data is mounted.
+services:
+  bitcoin:
+    build:
+      context: .
+      dockerfile: node.Dockerfile
+      args: { NODE: core }
+    ports: ["127.0.0.1::18443"]
+    volumes: ["bitcoin:/data"]
+  knots:
+    build:
+      context: .
+      dockerfile: node.Dockerfile
+      args: { NODE: knots }
+    # Use the BLAKE consensus block budget instead of Knots' smaller default
+    # 300 KB raw mining template. Relay/ancestor/script limits stay at defaults.
+    command:
+      - "-blake2b_headline=BcashJr integration regtest"
+      - "-testactivationheight=blake2b@110"
+      - "-rdtsexpiry=1819756800"
+      - "-blockmaxweight=800000"
+    ports: ["127.0.0.1::18443"]
+    volumes: ["knots:/data"]
+  bitcoin-electrs:
+    build: { context: ., dockerfile: electrs.Dockerfile }
+    command: ["--daemon-rpc-addr=bitcoin:18443", "--daemon-p2p-addr=bitcoin:18444"]
+    depends_on: [bitcoin]
+    restart: on-failure
+  knots-electrs:
+    build: { context: ., dockerfile: electrs.Dockerfile }
+    command: ["--daemon-rpc-addr=knots:18443", "--daemon-p2p-addr=knots:18444"]
+    depends_on: [knots]
+    restart: on-failure
+  bitcoin-api:
+    build: { context: ., dockerfile: mempool.Dockerfile }
+    environment: { NODE_HOST: bitcoin, ELECTRS_HOST: bitcoin-electrs }
+    ports: ["127.0.0.1::8999"]
+    depends_on: [bitcoin-electrs]
+    restart: on-failure
+  knots-api:
+    build: { context: ., dockerfile: mempool.Dockerfile }
+    environment: { NODE_HOST: knots, ELECTRS_HOST: knots-electrs }
+    ports: ["127.0.0.1::8999"]
+    depends_on: [knots-electrs]
+    restart: on-failure
+volumes:
+  bitcoin:
+  knots:
