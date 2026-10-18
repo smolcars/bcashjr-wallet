@@ -371,6 +371,7 @@ export interface BpubPublicationSummary {
   revealTxid: string;
   fundingPhase: IntentPhase;
   revealPhase: IntentPhase;
+  waitingForFundingConfirmation?: boolean;
   totalFee: number;
   dataUnspent: number | null;
   ownerUnspent: number | null;

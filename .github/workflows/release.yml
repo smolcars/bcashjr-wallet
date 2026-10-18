@@ -30,8 +30,13 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  integration:
+    name: Regtest release gate
+    uses: ./.github/workflows/integration.yml
+
   prepare:
     name: Validate and prepare release
+    needs: integration
     runs-on: ubuntu-latest
     outputs:
       release_version: ${{ steps.version.outputs.release_version }}

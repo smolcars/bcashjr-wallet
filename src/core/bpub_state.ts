@@ -2,7 +2,11 @@ import { RawTx } from "@scure/btc-signer";
 import { bpubP2wsh } from "../bpub/mod.ts";
 import { equalBytes, fromHex, toHex } from "./bytes.ts";
 import { parseDestinationAddress } from "./destination.ts";
-import { BPUB_MAX_FILE_BYTES, BPUB_MIN_OWNER_VALUE } from "./bpub_limits.ts";
+import {
+  BPUB_MAX_REVEAL_INPUTS,
+  BPUB_MIN_OWNER_VALUE,
+  bpubNeedsConfirmedFunding,
+} from "./bpub_limits.ts";
 import type { BpubPublication, BpubPublicationSummary, WalletPublicState } from "./types.ts";
 
 export function publicationForIntent(
@@ -26,6 +30,8 @@ export function summarizePublication(
     revealTxid: reveal.txid,
     fundingPhase: funding.phase,
     revealPhase: reveal.phase,
+    waitingForFundingConfirmation: bpubNeedsConfirmedFunding(publication.preview) &&
+      funding.phase === "seen" && reveal.phase !== "seen" && reveal.phase !== "confirmed",
     totalFee: publication.preview.fundingFee + publication.preview.revealFee,
     dataUnspent: publication.dataUnspent,
     ownerUnspent: publication.ownerUnspent,
@@ -63,7 +69,6 @@ export function assertBpubState(state: WalletPublicState): void {
       ) ||
       !["image/png", "image/jpeg", "image/gif", "image/webp"].includes(preview.mime) ||
       !Number.isSafeInteger(preview.size) || preview.size < 1 ||
-      preview.size > BPUB_MAX_FILE_BYTES ||
       !Number.isFinite(preview.feeRate) || preview.feeRate <= 0 || preview.feeRate > 100 ||
       !Number.isFinite(Date.parse(preview.expiresAt))
     ) throw new Error("Invalid BPUB review record");
@@ -94,7 +99,7 @@ export function assertBpubState(state: WalletPublicState): void {
     ) throw new Error("BPUB balance mismatch");
     if (
       !Array.isArray(p.witnessScripts) || p.witnessScripts.length !== preview.dataOutputCount ||
-      p.witnessScripts.length > 310 || typeof p.ownerScript !== "string" ||
+      p.witnessScripts.length > BPUB_MAX_REVEAL_INPUTS || typeof p.ownerScript !== "string" ||
       !/^20[0-9a-f]{64}7576a914[0-9a-f]{40}88ac$/u.test(p.ownerScript) ||
       p.ownerScript.slice(2, 66) !== preview.bpubId
     ) throw new Error("Invalid BPUB scripts");

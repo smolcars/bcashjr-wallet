@@ -33,6 +33,7 @@ Deno.test("each BPUB picture link uses its reveal transaction on Bitfiles", () =
     revealTxid: "4".repeat(64),
     fundingPhase: "seen",
     revealPhase: "prepared",
+    waitingForFundingConfirmation: true,
   });
   const markup = renderToStaticMarkup(
     <AmountUnitProvider unit="btc">
@@ -73,7 +74,10 @@ Deno.test("each BPUB picture link uses its reveal transaction on Bitfiles", () =
   const pending = [...markup.matchAll(/<article\b[^>]*>[\s\S]*?<\/article>/gu)]
     .map(([article]) => article)
     .find((article) => article.includes("picture-1.jpg") && article.includes("Funding: seen"));
-  if (!pending || pending.includes("View picture") || !pending.includes("Check / Resume")) {
+  if (
+    !pending || pending.includes("View picture") || !pending.includes("Check / Resume") ||
+    !pending.includes("Waiting for funding confirmation")
+  ) {
     throw new Error("Pending reveal must offer Resume without a broken picture link");
   }
 });

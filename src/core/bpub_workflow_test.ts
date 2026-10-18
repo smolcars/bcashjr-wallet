@@ -57,7 +57,12 @@ class Client extends EsploraClient {
   outspendFailure = false;
   outspendCalls = 0;
   beforePost?: () => Promise<void>;
-  constructor(readonly chain: ChainId, readonly walletAddress: string, readonly script: string) {
+  constructor(
+    readonly chain: ChainId,
+    readonly walletAddress: string,
+    readonly script: string,
+    readonly sourceValue = 100000,
+  ) {
     super(`https://${chain}.invalid`);
   }
   override tipHeight() {
@@ -110,7 +115,7 @@ class Client extends EsploraClient {
   override address(address: string) {
     const stats = {
       funded_txo_count: address === this.walletAddress ? 1 : 0,
-      funded_txo_sum: 100000,
+      funded_txo_sum: this.sourceValue,
       spent_txo_count: 0,
       spent_txo_sum: 0,
       tx_count: address === this.walletAddress ? 1 : 0,
@@ -127,7 +132,7 @@ class Client extends EsploraClient {
     const outputs: EsploraUtxo[] = [{
       txid: SOURCE,
       vout: 0,
-      value: 100000,
+      value: this.sourceValue,
       status: this.statuses.get(SOURCE)!,
     }];
     for (const [txid, raw] of this.raw) {
@@ -168,7 +173,7 @@ class Client extends EsploraClient {
   }
 }
 let secret: ReturnType<typeof protectEntropy> | undefined;
-async function fixture() {
+async function fixture(value = 100000) {
   const keys = new Bip86Keychain(new Uint8Array(16));
   const address = keys.derive(0, 0);
   keys.destroy();
@@ -188,7 +193,7 @@ async function fixture() {
     txid: SOURCE,
     outpoint: `${SOURCE}:0`,
     vout: 0,
-    value: 100000,
+    value,
     blake: structuredClone(observed),
     btc: structuredClone(observed),
   }];
@@ -200,8 +205,8 @@ async function fixture() {
   const repo = new Repo(state);
   secret ??= protectEntropy(new Uint8Array(16), PASSWORD);
   await repo.saveSecret(await secret);
-  const blake = new Client("blake", address.address, address.scriptPubKey);
-  const btc = new Client("btc", address.address, address.scriptPubKey);
+  const blake = new Client("blake", address.address, address.scriptPubKey, value);
+  const btc = new Client("btc", address.address, address.scriptPubKey, value);
   const service = new WalletService(repo, (chain) => chain === "blake" ? blake : btc);
   await service.initialize();
   await service.unlock(PASSWORD);
@@ -210,6 +215,10 @@ async function fixture() {
 }
 Deno.test("BPUB persists both signed transactions before POST and never broadcasts BTC", async () => {
   const f = await fixture();
+  // An original larger than the former 1 MiB cap is valid when its stream fits.
+  const data = new Uint8Array(2 * 1024 * 1024);
+  data.set(new TextEncoder().encode("GIF89a"));
+  f.request.dataBase64 = base64.encode(data);
   f.blake.beforePost = async () => {
     const saved = await f.repo.loadState();
     assert(
@@ -217,6 +226,7 @@ Deno.test("BPUB persists both signed transactions before POST and never broadcas
       "Pair not saved before POST",
     );
     parseWalletState(saved);
+    assert(saved.publications[0].preview.size === data.length);
   };
   const preview = await f.service.previewBpub(f.request);
   assert(f.blake.posts.length === 0);
@@ -542,4 +552,89 @@ Deno.test("BPUB state migration preserves schema-1 wallets and rejects damaged p
     mutate(copy);
     await rejects(() => Promise.resolve(parseWalletState(copy)));
   }
+});
+
+Deno.test("500-input publication persists across restart and waits for funding confirmation", async () => {
+  const f = await fixture(2_000_000);
+  const data = new Uint8Array(216800);
+  let seed = 1;
+  for (let i = 0; i < data.length; i++) {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    data[i] = seed & 255;
+  }
+  data.set(new TextEncoder().encode("GIF89a"));
+  const preview = await f.service.previewBpub({
+    ...f.request,
+    feeRate: 1,
+    dataBase64: base64.encode(data),
+  });
+  assert(preview.dataOutputCount === 500);
+  const snapshot = await f.service.confirmBpub(preview.id);
+  assert(f.blake.posts.length === 1, "Reveal broadcast before funding confirmed");
+  assert(snapshot.publications[0].waitingForFundingConfirmation);
+  const saved = parseWalletState(await f.repo.loadState());
+  const originalReveal = saved.intents.find((i) => i.kind === "blake-bpub-reveal")!;
+  assert(originalReveal.phase === "prepared" && !originalReveal.broadcastStartedAt);
+  await f.service.lock();
+  const restarted = new WalletService(f.repo, (c) => c === "blake" ? f.blake : f.btc);
+  await restarted.initialize();
+  await restarted.unlock(PASSWORD);
+  await restarted.resumeBpub(preview.id);
+  assert(f.blake.posts.length === 1);
+  f.blake.statuses.set(snapshot.publications[0].fundingTxid, {
+    confirmed: true,
+    block_height: 961650,
+  });
+  const resumed = await restarted.resumeBpub(preview.id);
+  assert(!resumed.publications[0].waitingForFundingConfirmation);
+  assert(f.blake.posts.length === 2 && f.blake.posts[1] === originalReveal.rawTx);
+  assert(f.btc.posts.length === 0);
+  const oversized = structuredClone(saved);
+  oversized.publications[0].witnessScripts.push(oversized.publications[0].witnessScripts[0]);
+  oversized.publications[0].preview.dataOutputCount++;
+  let rejected = false;
+  try {
+    parseWalletState(oversized);
+  } catch {
+    rejected = true;
+  }
+  assert(rejected, "Saved state accepted 501 scripts");
+  await restarted.lock();
+});
+
+Deno.test("BPUB requires confirmed inputs even when zero confirmations are configured", async () => {
+  const f = await fixture();
+  await f.service.updateSettings({ blakeConfirmations: 0 });
+  f.blake.statuses.set(SOURCE, { confirmed: false });
+  await f.service.sync();
+  assert(f.service.snapshot().selectableBlakeOutpoints.includes(`${SOURCE}:0`));
+  try {
+    await f.service.previewBpub(f.request);
+    throw new Error("Unconfirmed BPUB input was accepted");
+  } catch (error) {
+    assert(String(error).includes("at least one BLAKE confirmation"));
+  }
+  f.blake.statuses.set(SOURCE, { confirmed: true, block_height: 961650 });
+  await f.service.sync();
+  const preview = await f.service.previewBpub(f.request);
+  await f.service.confirmBpub(preview.id);
+  assert(f.blake.posts.length === 2, "One confirmation should permit publication");
+});
+
+Deno.test("BPUB rechecks input confirmations before signing after a reorg", async () => {
+  const f = await fixture();
+  await f.service.updateSettings({ blakeConfirmations: 0 });
+  const preview = await f.service.previewBpub(f.request);
+  f.blake.statuses.set(SOURCE, { confirmed: false });
+  try {
+    await f.service.confirmBpub(preview.id);
+    throw new Error("Reorged BPUB input was accepted");
+  } catch (error) {
+    assert(String(error).includes("at least one BLAKE confirmation"));
+  }
+  const saved = await f.repo.loadState();
+  assert(f.blake.posts.length === 0 && f.btc.posts.length === 0);
+  assert(saved.publications.length === 0 && saved.intents.length === 0);
 });

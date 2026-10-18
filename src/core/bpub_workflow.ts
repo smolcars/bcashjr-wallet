@@ -3,7 +3,7 @@ import { RawTx } from "@scure/btc-signer";
 import { authorizeSpend } from "./coin_policy.ts";
 import { selectCoins, toSpendableCoin } from "./coin_selection.ts";
 import { fromHex, toHex } from "./bytes.ts";
-import { BPUB_MAX_FILE_BYTES, BPUB_OWNER_VALUE } from "./bpub_limits.ts";
+import { BPUB_OWNER_VALUE, bpubNeedsConfirmedFunding } from "./bpub_limits.ts";
 import { assertBpubState } from "./bpub_state.ts";
 import {
   type BpubTemplate,
@@ -60,12 +60,14 @@ export class BpubWorkflow {
     if (!state.recoveryScanComplete) throw new Error("Finish wallet recovery before publishing");
     if (
       !request || typeof request.dataBase64 !== "string" ||
-      request.dataBase64.length > 4 * Math.ceil(BPUB_MAX_FILE_BYTES / 3) ||
       typeof request.filename !== "string" || typeof request.mime !== "string"
     ) throw new Error("Invalid BPUB picture request");
     const data = base64.decode(request.dataBase64);
     validateBpubImage(data, request.mime, request.filename);
     const selected = selectCoins(state, request.outpoints);
+    if (selected.some((coin) => !coin.blake.tx?.confirmed || coin.blake.tx.confirmations < 1)) {
+      throw new Error("BPUB requires at least one BLAKE confirmation on every selected input");
+    }
     const authorization = authorizeSpend(
       selected,
       "blake",
@@ -178,6 +180,9 @@ export class BpubWorkflow {
       throw new Error("Wallet state changed; review this publication again");
     }
     const selected = selectCoins(state, stored.preview.outpoints);
+    if (selected.some((coin) => !coin.blake.tx?.confirmed || coin.blake.tx.confirmations < 1)) {
+      throw new Error("BPUB requires at least one BLAKE confirmation on every selected input");
+    }
     const authorization = authorizeSpend(
       selected,
       "blake",
@@ -292,6 +297,13 @@ export class BpubWorkflow {
         throw new Error("Funding not yet observed on BLAKE; sync and resume later");
       }
       if (child.phase !== "seen" && child.phase !== "confirmed") {
+        if (parent.phase !== "confirmed" && bpubNeedsConfirmedFunding(publication.preview)) {
+          // A full publication pair exceeds default ancestor/descendant limits. Keep the
+          // signed reveal durable and let Check / Resume submit it after funding confirms.
+          await this.refreshObservations(clients.blake);
+          await this.context.saveWorkingState();
+          return;
+        }
         const outputs = await clients.blake.transactionOutspends(parent.txid);
         if (
           outputs.length !== publication.witnessScripts.length + 2 ||

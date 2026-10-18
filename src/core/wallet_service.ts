@@ -76,14 +76,16 @@ export class WalletService {
   #bpubWorkflow: BpubWorkflow;
   #syncing: Promise<WalletSnapshot> | null = null;
   #operationQueue: Promise<void> = Promise.resolve();
-  #chainVerifier = new ChainVerifier();
+  #chainVerifier: ChainVerifier;
   #intentReconciler = new IntentReconciler(() => this.#state);
 
   constructor(
     readonly repository: WalletRepository,
     readonly clientFactory: ClientFactory = (_chain, url) => new EsploraClient(url),
     readonly now: () => number = Date.now,
+    chainVerifier: ChainVerifier = new ChainVerifier(),
   ) {
+    this.#chainVerifier = chainVerifier;
     this.#intentWorkflow = new IntentWorkflow({
       state: () => this.#state,
       requireKeychain: () => this.#requireKeychain(),
