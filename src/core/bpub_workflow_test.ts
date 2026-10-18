@@ -603,3 +603,38 @@ Deno.test("500-input publication persists across restart and waits for funding c
   assert(rejected, "Saved state accepted 501 scripts");
   await restarted.lock();
 });
+
+Deno.test("BPUB requires confirmed inputs even when zero confirmations are configured", async () => {
+  const f = await fixture();
+  await f.service.updateSettings({ blakeConfirmations: 0 });
+  f.blake.statuses.set(SOURCE, { confirmed: false });
+  await f.service.sync();
+  assert(f.service.snapshot().selectableBlakeOutpoints.includes(`${SOURCE}:0`));
+  try {
+    await f.service.previewBpub(f.request);
+    throw new Error("Unconfirmed BPUB input was accepted");
+  } catch (error) {
+    assert(String(error).includes("at least one BLAKE confirmation"));
+  }
+  f.blake.statuses.set(SOURCE, { confirmed: true, block_height: 961650 });
+  await f.service.sync();
+  const preview = await f.service.previewBpub(f.request);
+  await f.service.confirmBpub(preview.id);
+  assert(f.blake.posts.length === 2, "One confirmation should permit publication");
+});
+
+Deno.test("BPUB rechecks input confirmations before signing after a reorg", async () => {
+  const f = await fixture();
+  await f.service.updateSettings({ blakeConfirmations: 0 });
+  const preview = await f.service.previewBpub(f.request);
+  f.blake.statuses.set(SOURCE, { confirmed: false });
+  try {
+    await f.service.confirmBpub(preview.id);
+    throw new Error("Reorged BPUB input was accepted");
+  } catch (error) {
+    assert(String(error).includes("at least one BLAKE confirmation"));
+  }
+  const saved = await f.repo.loadState();
+  assert(f.blake.posts.length === 0 && f.btc.posts.length === 0);
+  assert(saved.publications.length === 0 && saved.intents.length === 0);
+});

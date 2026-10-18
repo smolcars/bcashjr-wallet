@@ -39,6 +39,9 @@ coins, and review both transaction fees. Publishing first funds the BPUB outputs
 the picture. Both transactions use `SIGHASH_UNIFIED`; no BTC transaction is broadcast. Unused funds
 return to the wallet, unlike ordinary sweep-only sends.
 
+BPUB funding inputs require at least one BLAKE confirmation, even when the general wallet setting
+allows unconfirmed spending. This is rechecked before signing.
+
 A publication can use up to 500 reveal inputs: 217,000 bytes (about 212 KiB) for the encoded stream,
 including headers and metadata. Lossless compression can allow larger original pictures; review
 rejects pictures that exceed encoded capacity. There is no separate original-file size cap. Large

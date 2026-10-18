@@ -124,6 +124,31 @@ Deno.test({
           !rejected.allowed && /signature|sighash/i.test(rejected["reject-reason"]),
           `Core rejected for an unexpected reason: ${JSON.stringify(rejected)}`,
         );
+        await service!.updateSettings({ blakeConfirmations: 0 });
+        await eventually(
+          "unconfirmed split output",
+          sync,
+          (s) => s.selectableBlakeOutpoints.some((o) => o.startsWith(splitId)),
+        );
+        let blocked = false;
+        try {
+          await service!.previewBpub({
+            filename: "unconfirmed.gif",
+            mime: "image/gif",
+            dataBase64: base64.encode(picture(100)),
+            outpoints: service!.snapshot().selectableBlakeOutpoints.filter((o) =>
+              o.startsWith(splitId)
+            ),
+            feeRate: 2,
+          });
+        } catch (error) {
+          assert(
+            String(error).includes("at least one BLAKE confirmation"),
+            `Unexpected publication rejection: ${error}`,
+          );
+          blocked = true;
+        }
+        assert(blocked, "BPUB accepted an unconfirmed input with zero confirmations configured");
         await blake.call("generatetoaddress", [1, miner]);
         const [sourceTx, sourceIndex] = source.split(":");
         assert(
@@ -137,7 +162,10 @@ Deno.test({
         await eventually(
           "split confirmation",
           sync,
-          (s) => s.selectableBlakeOutpoints.some((o) => o.startsWith(splitId)),
+          (s) =>
+            s.outputs.some((o) =>
+              o.txid === splitId && o.blake.tx?.confirmed && o.blake.tx.confirmations >= 1
+            ),
         );
       });
       await step(

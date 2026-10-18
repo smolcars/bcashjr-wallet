@@ -39,8 +39,10 @@ export function BpubScreen({ snapshot, active, busy, setBusy, setSnapshot, onErr
   const input = useRef<HTMLInputElement>(null);
   const infoDialog = useRef<HTMLDialogElement>(null);
   const selectable = new Set(snapshot.selectableBlakeOutpoints);
-  const coins = snapshot.outputs.filter((o) => selectable.has(o.outpoint));
-  const chosen = selected.filter((o) => selectable.has(o));
+  const coins = snapshot.outputs.filter((o) =>
+    selectable.has(o.outpoint) && o.blake.tx?.confirmed && o.blake.tx.confirmations >= 1
+  );
+  const chosen = selected.filter((outpoint) => coins.some((coin) => coin.outpoint === outpoint));
   const allCoinsSelected = coins.length > 0 &&
     coins.every((coin) => chosen.includes(coin.outpoint));
   const selectedValue = coins.reduce(
@@ -125,10 +127,10 @@ export function BpubScreen({ snapshot, active, busy, setBusy, setSnapshot, onErr
           on-chain so others can reconstruct it.
         </p>
         <p>
-          Choose a picture and the BLAKE coins to fund it, then review the fees for both the funding
-          and reveal transactions. Unused funds return to your wallet as change, while a separate
-          output records BPUB ownership. Both transactions use SIGHASH_UNIFIED replay protection;
-          your BTC copies are not spent.
+          Choose a picture and BLAKE coins with at least one confirmation, then review the fees for
+          both the funding and reveal transactions. Unused funds return to your wallet as change,
+          while a separate output records BPUB ownership. Both transactions use SIGHASH_UNIFIED
+          replay protection; your BTC copies are not spent.
         </p>
         <p>
           Supports one picture per publication, using up to 500 reveal inputs (217 KB after

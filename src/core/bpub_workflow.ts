@@ -65,6 +65,9 @@ export class BpubWorkflow {
     const data = base64.decode(request.dataBase64);
     validateBpubImage(data, request.mime, request.filename);
     const selected = selectCoins(state, request.outpoints);
+    if (selected.some((coin) => !coin.blake.tx?.confirmed || coin.blake.tx.confirmations < 1)) {
+      throw new Error("BPUB requires at least one BLAKE confirmation on every selected input");
+    }
     const authorization = authorizeSpend(
       selected,
       "blake",
@@ -177,6 +180,9 @@ export class BpubWorkflow {
       throw new Error("Wallet state changed; review this publication again");
     }
     const selected = selectCoins(state, stored.preview.outpoints);
+    if (selected.some((coin) => !coin.blake.tx?.confirmed || coin.blake.tx.confirmations < 1)) {
+      throw new Error("BPUB requires at least one BLAKE confirmation on every selected input");
+    }
     const authorization = authorizeSpend(
       selected,
       "blake",
