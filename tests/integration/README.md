@@ -19,11 +19,11 @@ The runner builds and starts six services:
 Standard transaction policy is enabled on both regtest nodes (`acceptnonstdtxn=0`). Ancestor,
 transaction weight and script policy limits are not raised for BPUB. The test miner uses
 `-blockmaxweight=800000`, matching the reduced-data consensus budget, instead of Knots' default 300
-KB raw block template. A 500-input reveal fits relay weight policy but exceeds that smaller raw
-mining template. Both nodes use a fixed mock clock so the scheduled reduced-data expiry cannot
-silently change test coverage. Core mines a common prefix; the test imports those exact blocks into
-Knots before both nodes independently mine height 110. There is no connection to mainnet and no
-existing wallet or node data is mounted.
+KB raw block template. Large padded reveals can exceed that smaller raw mining template while
+fitting relay weight policy. Both nodes use a fixed mock clock so the scheduled reduced-data expiry
+cannot silently change test coverage. Core mines a common prefix; the test imports those exact
+blocks into Knots before both nodes independently mine height 110. There is no connection to mainnet
+and no existing wallet or node data is mounted.
 
 The application remains mainnet-only. The test's `RegtestClient` translates address strings from
 `bc1` to `bcrt1` for explorer lookups while preserving the identical output scripts. An injected
@@ -32,7 +32,7 @@ the mainnet checkpoints; neither test configuration is exposed through wallet se
 transaction construction, signatures, Esplora response validation, coin policy, wallet sync,
 publication state and file persistence use production code.
 
-The suite checks receiving, BLAKE splitting and Core replay rejection, then a full 500-input BPUB
+The suite checks receiving, BLAKE splitting and Core replay rejection, then a large padded BPUB
 publication. It verifies rejection with unconfirmed funding under the default ancestor limit,
 saving/reloading before reveal, acceptance after funding confirmation, mined reveal discovery, exact
 content recovery, and the ownership reserve. No real funds are used.

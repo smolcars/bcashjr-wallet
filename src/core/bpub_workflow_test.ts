@@ -554,9 +554,9 @@ Deno.test("BPUB state migration preserves schema-1 wallets and rejects damaged p
   }
 });
 
-Deno.test("500-input publication persists across restart and waits for funding confirmation", async () => {
+Deno.test("Large padded publication persists across restart and waits for funding confirmation", async () => {
   const f = await fixture(2_000_000);
-  const data = new Uint8Array(216800);
+  const data = new Uint8Array(104000);
   let seed = 1;
   for (let i = 0; i < data.length; i++) {
     seed ^= seed << 13;
@@ -570,7 +570,7 @@ Deno.test("500-input publication persists across restart and waits for funding c
     feeRate: 1,
     dataBase64: base64.encode(data),
   });
-  assert(preview.dataOutputCount === 500);
+  assert(preview.fundingVsize + preview.revealVsize > 101000);
   const snapshot = await f.service.confirmBpub(preview.id);
   assert(f.blake.posts.length === 1, "Reveal broadcast before funding confirmed");
   assert(snapshot.publications[0].waitingForFundingConfirmation);
@@ -600,7 +600,7 @@ Deno.test("500-input publication persists across restart and waits for funding c
   } catch {
     rejected = true;
   }
-  assert(rejected, "Saved state accepted 501 scripts");
+  assert(rejected, "Saved state accepted an extra script");
   await restarted.lock();
 });
 

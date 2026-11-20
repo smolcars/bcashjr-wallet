@@ -2,7 +2,14 @@ import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { ripemd160 } from "@noble/hashes/legacy.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { bpubDataScripts, bpubOwnerScript, bpubP2wsh, encodeBpub } from "../bpub/mod.ts";
+import {
+  bpubDataScripts,
+  bpubOwnerScript,
+  bpubP2wsh,
+  bpubPaddingItems,
+  encodeBpub,
+  parseBpubScript,
+} from "../bpub/mod.ts";
 import type { BpubCompression } from "../bpub/mod.ts";
 import {
   compactSize,
@@ -133,8 +140,12 @@ export function createBpubTemplate(
   }
   const count = payload.scripts.length;
   if (
-    count < 1 || count > BPUB_MAX_REVEAL_INPUTS || payload.scripts.some((s) => s.length > 513) ||
-    payload.scripts.reduce((n, s) => n + s[s.length - 2] - 0x50, 0) > 16000
+    count < 1 || count > BPUB_MAX_REVEAL_INPUTS || payload.scripts.some((s) => s.length > 541) ||
+    payload.scripts.reduce(
+        (n, s) =>
+          n + parseBpubScript(s).keys.length + (parseBpubScript(s).padding === "none" ? 0 : 13),
+        0,
+      ) > 16000
   ) {
     throw new Error("BPUB scripts exceed relay limits");
   }
@@ -150,13 +161,15 @@ export function createBpubTemplate(
   };
   const revealVsize = size(
     reveal,
-    payload.scripts.map((s) => [new Uint8Array(), new Uint8Array(73), s]),
+    payload.scripts.map((s) => [...bpubPaddingItems(s), new Uint8Array(), new Uint8Array(73), s]),
   );
   const revealFee = Math.ceil(revealVsize * feeRate);
-  const dataValue = Math.max(count * 546, revealFee + 330);
-  const values = payload.scripts.map((_, index) =>
-    546 + (index === 0 ? dataValue - count * 546 : 0)
+  const baseValue = Math.max(
+    546,
+    Math.ceil(450 * feeRate + Math.ceil((134 * feeRate + 546) / count)),
   );
+  const values = payload.scripts.map((_, index) => baseValue + index);
+  const dataValue = values.reduce((sum, value) => sum + value, 0);
   const funding: UnifiedTransaction = {
     ...sweep.tx,
     outputs: [
@@ -225,7 +238,12 @@ export function signBpub(template: BpubTemplate, keychain: Bip86Keychain, keyInd
       ) {
         throw new Error("BPUB reveal signature verification failed");
       }
-      return [new Uint8Array(), concatBytes(signature, Uint8Array.of(SIGHASH_ALL_UNIFIED)), script];
+      return [
+        ...bpubPaddingItems(script),
+        new Uint8Array(),
+        concatBytes(signature, Uint8Array.of(SIGHASH_ALL_UNIFIED)),
+        script,
+      ];
     });
     if (size(template.reveal, witnesses) > template.revealVsize) {
       throw new Error("BPUB reveal exceeded reviewed size");
