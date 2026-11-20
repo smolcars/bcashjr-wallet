@@ -1,4 +1,5 @@
-// Capacity applies to the encoded stream after compression, including headers and metadata.
+// Absolute encoding/state bounds, retained for legacy publications. New padded reveals
+// must also fit the transaction weight limit checked by createBpubTemplate.
 export const BPUB_MAX_REVEAL_INPUTS = 500;
 export const BPUB_MAX_STREAM_BYTES = BPUB_MAX_REVEAL_INPUTS * 14 * 31;
 export const BPUB_ANCESTOR_VSIZE_LIMIT = 101_000;

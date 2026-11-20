@@ -108,10 +108,14 @@ export function bpubWire(tx: UnifiedTransaction, witnesses: Uint8Array[][]): Uin
 export function bpubTxid(tx: UnifiedTransaction): string {
   return toHex(reverseBytes(sha256(sha256(serializeStripped(tx)))));
 }
-function size(tx: UnifiedTransaction, witnesses: Uint8Array[][]): number {
+function size(
+  tx: UnifiedTransaction,
+  witnesses: Uint8Array[][],
+  oversizedMessage = "BPUB transaction exceeds the standard transaction weight limit",
+): number {
   const weight = serializeStripped(tx).length * 3 + bpubWire(tx, witnesses).length;
   if (weight > 400_000) {
-    throw new Error("BPUB transaction exceeds the standard transaction weight limit");
+    throw new Error(oversizedMessage);
   }
   return Math.ceil(weight / 4);
 }
@@ -162,6 +166,7 @@ export function createBpubTemplate(
   const revealVsize = size(
     reveal,
     payload.scripts.map((s) => [...bpubPaddingItems(s), new Uint8Array(), new Uint8Array(73), s]),
+    "Picture exceeds BPUB publication capacity after compression and metadata; resize it or choose a smaller picture",
   );
   const revealFee = Math.ceil(revealVsize * feeRate);
   const baseValue = Math.max(

@@ -1,6 +1,6 @@
 import { RawTx, Transaction } from "@scure/btc-signer";
 import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
-import { decodeBpub, parseBpubScript } from "../bpub/mod.ts";
+import { bpubDataScripts, decodeBpub, parseBpubScript } from "../bpub/mod.ts";
 import { Bip86Keychain } from "./keys.ts";
 import {
   bpubCompression,
@@ -228,6 +228,52 @@ Deno.test("BPUB enforces encoded capacity and permits larger compressible origin
         { ...small, scripts: Array(501).fill(small.scripts[0]) },
       )
     );
+  } finally {
+    keys.destroy();
+  }
+});
+
+Deno.test("BPUB padded capacity gives resize guidance without reducing legacy limits", () => {
+  const keys = keychain();
+  try {
+    const data = new Uint8Array(110000);
+    let seed = 1;
+    for (let i = 0; i < data.length; i++) {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      data[i] = seed & 255;
+    }
+    data.set(new TextEncoder().encode("GIF89a"));
+    const payload = makeBpubPayload(data, "large.gif", "image/gif", keys, 0);
+    const a = keys.derive(0, 0);
+    const coins = [{
+      txid: "11".repeat(32),
+      vout: 0,
+      value: 20000000,
+      path: a.path,
+      scriptPubKey: a.scriptPubKey,
+    }];
+    let message = "";
+    try {
+      createBpubTemplate(coins, a.address, 1, 0, payload);
+    } catch (error) {
+      message = String(error);
+    }
+    if (
+      !message.includes("after compression and metadata; resize it or choose a smaller picture")
+    ) {
+      throw new Error("Oversized padded reveal must explain how to make the picture fit");
+    }
+    const parsed = parseBpubScript(payload.scripts[0]);
+    const legacy = bpubDataScripts(parsed.keys.slice(0, -1), parsed.keys.at(-1)!, true)[0];
+    const template = createBpubTemplate(coins, a.address, 1, 0, {
+      ...payload,
+      scripts: Array(500).fill(legacy),
+    });
+    if (template.reveal.inputs.length !== 500 || template.revealVsize > 100000) {
+      throw new Error("Legacy 500-input capacity regressed");
+    }
   } finally {
     keys.destroy();
   }
