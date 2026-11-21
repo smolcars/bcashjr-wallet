@@ -1,5 +1,5 @@
 import { RawTx } from "@scure/btc-signer";
-import { bpubP2wsh } from "../bpub/mod.ts";
+import { bpubP2wsh, bpubPaddingItems } from "../bpub/mod.ts";
 import { equalBytes, fromHex, toHex } from "./bytes.ts";
 import { parseDestinationAddress } from "./destination.ts";
 import {
@@ -141,14 +141,19 @@ export function assertBpubState(state: WalletPublicState): void {
     for (let index = 0; index < count; index++) {
       const script = fromHex(p.witnessScripts[index]);
       if (
-        script.length < 71 || script.length > 513 || (script.length - 3) % 34 !== 0 ||
-        script[0] !== 0x51 || script.at(-1) !== 0xae ||
-        script.at(-2) !== 0x50 + (script.length - 3) / 34 ||
         !equalBytes(f.outputs[index].script, bpubP2wsh(script)) || f.outputs[index].amount < 546n ||
         toHex(r.inputs[index].txid) !== funding.txid || r.inputs[index].index !== index ||
         reveal.inputOutpoints[index] !== `${funding.txid}:${index}`
       ) throw new Error("BPUB data output changed");
-      const witness = r.witnesses[index];
+      const padding = bpubPaddingItems(script);
+      const fullWitness = r.witnesses[index];
+      if (
+        !fullWitness || fullWitness.length !== padding.length + 3 ||
+        padding.some((item, i) => !equalBytes(item, fullWitness[i]))
+      ) {
+        throw new Error("BPUB reveal padding changed");
+      }
+      const witness = fullWitness.slice(-3);
       if (
         !witness || witness.length !== 3 || witness[0].length !== 0 ||
         witness[1].length > 73 || witness[1].at(-1) !== 0x21 ||

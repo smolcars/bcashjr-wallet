@@ -1,6 +1,14 @@
 import fixtures from "../../testdata/bpub_v5.json" with { type: "json" };
 import { deflateRawSync, inflateRawSync } from "node:zlib";
-import { bpubDataScripts, bpubId, decodeBpub, encodeBpub, encodeDataKeys } from "./mod.ts";
+import {
+  bpubDataScripts,
+  bpubId,
+  bpubPaddingItems,
+  decodeBpub,
+  encodeBpub,
+  encodeDataKeys,
+  parseBpubScript,
+} from "./mod.ts";
 const fromHex = (s: string) => Uint8Array.from(s.match(/../g) ?? [], (b) => parseInt(b, 16));
 const hex = (b: Uint8Array) => Array.from(b, (v) => v.toString(16).padStart(2, "0")).join("");
 const compression = {
@@ -14,7 +22,9 @@ Deno.test("portable BPUB v5 matches upstream Python streams, keys and scripts", 
     if (
       encoded.id !== fixture.id || hex(encoded.stream) !== fixture.stream ||
       JSON.stringify(encoded.publicKeys.map(hex)) !== JSON.stringify(fixture.keys) ||
-      JSON.stringify(bpubDataScripts(encoded.publicKeys, fromHex(fixtures.control)).map(hex)) !==
+      JSON.stringify(
+          bpubDataScripts(encoded.publicKeys, fromHex(fixtures.control), true).map(hex),
+        ) !==
         JSON.stringify(fixture.scripts)
     ) {
       throw new Error(`Python interoperability mismatch for ${fixture.filename}`);
@@ -68,4 +78,30 @@ Deno.test("BPUB encoder accepts only metadata its decoder can inflate", () => {
     rejected = error instanceof Error && error.message === "BPUB metadata is too large";
   }
   if (!rejected) throw new Error("Encoder accepted metadata beyond the decoder's limit");
+});
+
+Deno.test("BPUB padding uses the upstream v2 suffix and deterministic DER-shaped items", () => {
+  const control = fromHex(fixtures.control);
+  const script = bpubDataScripts([control], control)[0];
+  const legacy = bpubDataScripts([control], control, true)[0];
+  if (
+    hex(script.slice(legacy.length)) !==
+      "6b8201408764" + "ac".repeat(13) + "68" + "6d".repeat(6) + "756c"
+  ) throw new Error("Wrong v2 suffix");
+  const pads = bpubPaddingItems(script);
+  if (
+    pads.length !== 13 || parseBpubScript(script).padding !== "padv2" ||
+    bpubPaddingItems(legacy).length
+  ) throw new Error("Wrong padding mode");
+  for (const pad of pads) {
+    if (
+      pad.length !== 64 || hex(pad.slice(0, 4)) !== "303d021c" ||
+      hex(pad.slice(32, 34)) !== "021d" || pad[63] !== 1 || !pad[4] || pad[4] > 127 || !pad[34] ||
+      pad[34] > 127
+    ) throw new Error("Wrong padding item");
+  }
+  if (
+    pads.map(hex).join() !== bpubPaddingItems(script).map(hex).join() ||
+    new Set(pads.map(hex)).size !== 13
+  ) throw new Error("Padding is not deterministic and distinct");
 });

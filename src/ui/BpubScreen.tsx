@@ -133,9 +133,10 @@ export function BpubScreen({ snapshot, active, busy, setBusy, setSnapshot, onErr
           replay protection; your BTC copies are not spent.
         </p>
         <p>
-          Supports one picture per publication, using up to 500 reveal inputs (217 KB after
-          compression, including metadata). The original file and its embedded metadata become
-          public, so only publish content you intend to share permanently.
+          Supports one picture per publication, with room for about 106 KB after compression,
+          including metadata. The exact capacity is checked when you review the publication. Larger
+          originals can fit if they compress enough. The original file and its embedded metadata
+          become public, so only publish content you intend to share permanently.
         </p>
         <button
           type="button"
@@ -219,7 +220,7 @@ export function BpubScreen({ snapshot, active, busy, setBusy, setSnapshot, onErr
             {picture ? "Change picture" : "Choose picture"}
           </button>
           <p className="muted">
-            PNG, JPEG, GIF or WebP · up to 217 KB encoded · capacity checked at review
+            PNG, JPEG, GIF or WebP · about 106 KB after compression · capacity checked at review
           </p>
           {picture && (
             <figure className="bpub-picture">

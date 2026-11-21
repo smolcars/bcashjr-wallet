@@ -63,6 +63,27 @@ export class EsploraError extends Error {
 export type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+
+/** Keep node rejection reasons readable without displaying a proxy's HTML error page. */
+function transactionErrorDetail(body: string): string {
+  let detail = body.trim();
+  if (!detail || detail.startsWith("<")) return "";
+  try {
+    const value = JSON.parse(detail);
+    const message = typeof value === "string"
+      ? value
+      : value?.message ?? value?.error?.message ?? value?.error ?? value?.["reject-reason"];
+    if (typeof message !== "string") return "";
+    detail = message;
+  } catch {
+    // Esplora commonly returns plain text, including sendrawtransaction RPC errors.
+  }
+  detail = Array.from(detail, (char) => {
+    const code = char.charCodeAt(0);
+    return code < 32 || (code >= 127 && code <= 159) ? " " : char;
+  }).join("").replace(/\s+/gu, " ").trim();
+  return detail.length > 500 ? `${detail.slice(0, 500)}…` : detail;
+}
 const ADDRESS_STAT_FIELDS = [
   "funded_txo_count",
   "funded_txo_sum",
@@ -215,6 +236,7 @@ export class EsploraClient {
       );
       if (buffered.ok || buffered.status === 404) return buffered;
       const body = await buffered.text();
+      const detail = path === "/tx" || path === "/txs/test" ? transactionErrorDetail(body) : "";
       if (buffered.status === 429) {
         const retryAfter = buffered.headers.get("Retry-After");
         throw new EsploraError(
@@ -224,7 +246,7 @@ export class EsploraClient {
         );
       }
       throw new EsploraError(
-        `Esplora request failed (${buffered.status})`,
+        `Esplora request failed (${buffered.status})${detail ? `: ${detail}` : ""}`,
         buffered.status,
         body,
       );

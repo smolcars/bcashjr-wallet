@@ -1,6 +1,6 @@
 import { RawTx, Transaction } from "@scure/btc-signer";
 import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
-import { decodeBpub } from "../bpub/mod.ts";
+import { bpubDataScripts, decodeBpub, parseBpubScript } from "../bpub/mod.ts";
 import { Bip86Keychain } from "./keys.ts";
 import {
   bpubCompression,
@@ -85,7 +85,7 @@ Deno.test("BPUB funding and reveal preserve amounts and sign every input with un
     control.fill(0);
     const recoveredKeys: Uint8Array[] = [];
     for (let i = 0; i < count; i++) {
-      const [dummy, signature, script] = reveal.witnesses![i];
+      const [dummy, signature, script] = reveal.witnesses![i].slice(-3);
       if (
         dummy.length || signature.at(-1) !== 0x21 || toHex(script) !== toHex(payload.scripts[i])
       ) throw new Error("Wrong reveal witness");
@@ -99,9 +99,7 @@ Deno.test("BPUB funding and reveal preserve amounts and sign every input with un
       if (!secp256k1.verify(signature.slice(0, -1), hash, pub, { prehash: false, format: "der" })) {
         throw new Error("Bad ECDSA reveal signature");
       }
-      for (let offset = 1; offset < script.length - 36; offset += 34) {
-        recoveredKeys.push(script.slice(offset + 1, offset + 34));
-      }
+      recoveredKeys.push(...parseBpubScript(script).keys.slice(0, -1));
     }
     if (toHex(decodeBpub(recoveredKeys, bpubCompression, 131072).data) !== toHex(image)) {
       throw new Error("Reveal did not recover the picture");
@@ -156,11 +154,11 @@ Deno.test("BPUB rejects empty, unsupported and mismatched pictures", () => {
   throws(() => validateBpubImage(image, "image/svg+xml", "a.svg"));
 });
 
-Deno.test("BPUB maximum-size incompressible picture fits the reviewed relay limits", () => {
+Deno.test("BPUB 96 KiB incompressible picture fits the reviewed relay limits", () => {
   const keys = keychain();
   try {
     // Deterministic pseudo-random fixture, not wallet entropy.
-    const data = new Uint8Array(216_800);
+    const data = new Uint8Array(96 * 1024);
     let seed = 1;
     for (let i = 0; i < data.length; i++) {
       seed ^= seed << 13;
@@ -185,7 +183,7 @@ Deno.test("BPUB maximum-size incompressible picture fits the reviewed relay limi
       payload,
     );
     if (
-      payload.scripts.length !== 500 ||
+      payload.scripts.length < 220 || payload.scripts.length > 240 ||
       template.revealVsize > 100000 || template.fundingVsize > 100000
     ) {
       throw new Error("Unexpected maximum-size transaction limits");
@@ -230,6 +228,52 @@ Deno.test("BPUB enforces encoded capacity and permits larger compressible origin
         { ...small, scripts: Array(501).fill(small.scripts[0]) },
       )
     );
+  } finally {
+    keys.destroy();
+  }
+});
+
+Deno.test("BPUB padded capacity gives resize guidance without reducing legacy limits", () => {
+  const keys = keychain();
+  try {
+    const data = new Uint8Array(110000);
+    let seed = 1;
+    for (let i = 0; i < data.length; i++) {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      data[i] = seed & 255;
+    }
+    data.set(new TextEncoder().encode("GIF89a"));
+    const payload = makeBpubPayload(data, "large.gif", "image/gif", keys, 0);
+    const a = keys.derive(0, 0);
+    const coins = [{
+      txid: "11".repeat(32),
+      vout: 0,
+      value: 20000000,
+      path: a.path,
+      scriptPubKey: a.scriptPubKey,
+    }];
+    let message = "";
+    try {
+      createBpubTemplate(coins, a.address, 1, 0, payload);
+    } catch (error) {
+      message = String(error);
+    }
+    if (
+      !message.includes("after compression and metadata; resize it or choose a smaller picture")
+    ) {
+      throw new Error("Oversized padded reveal must explain how to make the picture fit");
+    }
+    const parsed = parseBpubScript(payload.scripts[0]);
+    const legacy = bpubDataScripts(parsed.keys.slice(0, -1), parsed.keys.at(-1)!, true)[0];
+    const template = createBpubTemplate(coins, a.address, 1, 0, {
+      ...payload,
+      scripts: Array(500).fill(legacy),
+    });
+    if (template.reveal.inputs.length !== 500 || template.revealVsize > 100000) {
+      throw new Error("Legacy 500-input capacity regressed");
+    }
   } finally {
     keys.destroy();
   }

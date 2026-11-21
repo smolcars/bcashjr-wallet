@@ -1,6 +1,6 @@
 import { base64 } from "@scure/base";
 import { RawTx } from "@scure/btc-signer";
-import { decodeBpub } from "../../src/bpub/mod.ts";
+import { decodeBpub, parseBpubScript } from "../../src/bpub/mod.ts";
 import { bpubCompression } from "../../src/core/bpub_transaction.ts";
 import { fromHex, toHex } from "../../src/core/bytes.ts";
 import { ChainVerifier } from "../../src/core/chain_verifier.ts";
@@ -169,9 +169,9 @@ Deno.test({
         );
       });
       await step(
-        "500-input BPUB waits, survives restart, is accepted and recovers exact bytes",
+        "Padded BPUB waits, survives restart, is accepted and recovers exact bytes",
         async () => {
-          const data = picture(216800);
+          const data = picture(104000);
           const s = service!.snapshot();
           const preview = await service!.previewBpub({
             filename: "regtest.gif",
@@ -180,7 +180,10 @@ Deno.test({
             outpoints: s.selectableBlakeOutpoints.filter((o) => o.startsWith(splitId)),
             feeRate: 2,
           });
-          assert(preview.dataOutputCount === 500, "Fixture did not reach the input boundary");
+          assert(
+            preview.fundingVsize + preview.revealVsize > 101000,
+            "Fixture must exceed the ancestor size limit",
+          );
           await service!.confirmBpub(preview.id);
           const saved = await repo.loadState();
           const publication = saved.publications[0];
@@ -233,14 +236,9 @@ Deno.test({
             (s) => s.publications[0].revealPhase === "confirmed",
           );
           const raw = RawTx.decode(fromHex(await clients.blake.transactionHex(reveal.txid)));
-          const dataKeys = raw.witnesses!.flatMap((w) => {
-            const script = w[2];
-            const result: Uint8Array[] = [];
-            for (let offset = 1; offset < script.length - 36; offset += 34) {
-              result.push(script.slice(offset + 1, offset + 34));
-            }
-            return result;
-          });
+          const dataKeys = raw.witnesses!.flatMap((w) =>
+            parseBpubScript(w.at(-1)!).keys.slice(0, -1)
+          );
           assert(
             toHex(decodeBpub(dataKeys, bpubCompression, data.length).data) === toHex(data),
             "Published content changed",

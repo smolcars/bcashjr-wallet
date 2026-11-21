@@ -1,4 +1,4 @@
-import { sha256 } from "@noble/hashes/sha2.js";
+import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
 /** Inject raw DEFLATE so the codec works in browsers, Node and Deno. */
@@ -159,7 +159,83 @@ export function decodeBpub(
   return { metadata, data };
 }
 
-export function bpubDataScripts(publicKeys: Uint8Array[], controlKey: Uint8Array): Uint8Array[] {
+const BPUB_PAD_V2 = Uint8Array.from([
+  0x6b,
+  0x82,
+  1,
+  64,
+  0x87,
+  0x64,
+  ...Array(13).fill(0xac),
+  0x68,
+  ...Array(6).fill(0x6d),
+  0x75,
+  0x6c,
+]);
+const BPUB_PAD_V1 = Uint8Array.from([
+  0x6b,
+  ...Array(6).fill(0x6d),
+  0x75,
+  0x6c,
+  0x51,
+  0x64,
+  ...Array(13).fill(0xac),
+  0x68,
+]);
+
+/** Recognize historical scripts for spending; unknown suffixes are unsafe to sign. */
+export function parseBpubScript(script: Uint8Array) {
+  let offset = 1;
+  const keys: Uint8Array[] = [];
+  if (script[0] !== 0x51) throw new Error("Invalid BPUB multisig");
+  while (script[offset] === 33 && offset + 34 <= script.length) {
+    const key = script.slice(offset + 1, offset + 34);
+    secp256k1.Point.fromBytes(key);
+    keys.push(key);
+    offset += 34;
+  }
+  if (
+    keys.length < 2 || keys.length > 15 || script[offset] !== 0x50 + keys.length ||
+    script[offset + 1] !== 0xae
+  ) throw new Error("Invalid BPUB multisig");
+  const suffix = script.slice(offset + 2);
+  const padding = !suffix.length
+    ? "none"
+    : hex(suffix) === hex(BPUB_PAD_V2)
+    ? "padv2"
+    : hex(suffix) === hex(BPUB_PAD_V1)
+    ? "padv1"
+    : "unknown";
+  return { keys, padding };
+}
+
+export function bpubPaddingItems(script: Uint8Array): Uint8Array[] {
+  const { padding } = parseBpubScript(script);
+  if (padding === "unknown") throw new Error("Unsupported BPUB script suffix");
+  if (padding === "none") return [];
+  return Array.from({ length: 13 }, (_, i) => {
+    const seed = sha512(
+      concat(new TextEncoder().encode("BPUB-PAD-ITEM"), script, Uint8Array.of(i)),
+    );
+    const r = seed.slice(0, 28);
+    const s = seed.slice(28, 57);
+    r[0] = (r[0] & 0x7f) || 1;
+    s[0] = (s[0] & 0x7f) || 1;
+    return concat(
+      Uint8Array.of(0x30, 0x3d, 2, 0x1c),
+      r,
+      Uint8Array.of(2, 0x1d),
+      s,
+      Uint8Array.of(1),
+    );
+  });
+}
+
+export function bpubDataScripts(
+  publicKeys: Uint8Array[],
+  controlKey: Uint8Array,
+  legacy = false,
+): Uint8Array[] {
   if (controlKey.length !== 33 || !publicKeys.length) throw new Error("Invalid BPUB keys");
   secp256k1.Point.fromBytes(controlKey);
   return Array.from({ length: Math.ceil(publicKeys.length / 14) }, (_, index) => {
@@ -172,6 +248,7 @@ export function bpubDataScripts(publicKeys: Uint8Array[], controlKey: Uint8Array
       Uint8Array.of(0x51),
       ...keys.map((key) => concat(Uint8Array.of(33), key)),
       Uint8Array.of(0x50 + keys.length, 0xae),
+      legacy ? new Uint8Array() : BPUB_PAD_V2,
     );
   });
 }
