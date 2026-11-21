@@ -1,3 +1,4 @@
+import { BACKEND_MIGRATION_VERSION, migrateBlakeBackend } from "./backend_urls.ts";
 import { ChainVerifier } from "./chain_verifier.ts";
 import { BpubWorkflow } from "./bpub_workflow.ts";
 import type { BpubPreview, BpubPreviewRequest } from "./types.ts";
@@ -164,6 +165,16 @@ export class WalletService {
     this.#state = state;
     this.#persistedState = structuredClone(state);
     this.#secret = secret;
+    if ((state.backendMigrationVersion ?? 0) < BACKEND_MIGRATION_VERSION) {
+      const migratedBackend = migrateBlakeBackend(state.settings.blakeApiUrl);
+      if (migratedBackend !== state.settings.blakeApiUrl) {
+        this.#state.settings.blakeApiUrl = migratedBackend;
+        this.#state.lastSyncAt = undefined;
+        this.#state.lastSyncError = undefined;
+      }
+      this.#state.backendMigrationVersion = BACKEND_MIGRATION_VERSION;
+      await this.#saveWorkingState();
+    }
     return this.snapshot();
   }
 
