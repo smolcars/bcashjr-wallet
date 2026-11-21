@@ -254,6 +254,12 @@ export function parseWalletState(value: unknown): WalletPublicState {
   }
   const legacy = (stored as { schema?: number }).schema === 1;
   if (
+    stored.backendMigrationVersion !== undefined &&
+    (!Number.isSafeInteger(stored.backendMigrationVersion) || stored.backendMigrationVersion < 0)
+  ) {
+    throw new Error("Wallet backend migration version is malformed");
+  }
+  if (
     !legacy &&
     (!Array.isArray(stored.publications) || !Number.isSafeInteger(stored.nextPublicationIndex))
   ) {
@@ -318,6 +324,9 @@ export function parseWalletState(value: unknown): WalletPublicState {
     coins.length;
   const parsed: WalletPublicState = {
     schema: 2,
+    ...(stored.backendMigrationVersion !== undefined
+      ? { backendMigrationVersion: stored.backendMigrationVersion }
+      : {}),
     publications: legacy ? [] : structuredClone(stored.publications!),
     nextPublicationIndex: legacy ? 0 : stored.nextPublicationIndex!,
     ...(stored.createdAt !== undefined ? { createdAt: stored.createdAt } : {}),

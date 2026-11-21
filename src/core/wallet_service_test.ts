@@ -2687,3 +2687,91 @@ Deno.test("recovery completion rechecks outputs discovered on earlier pages", as
     throw new Error("Recovery completed with a stale output from an earlier page");
   }
 });
+
+Deno.test("BLAKE backend migration runs once and respects a later switch back to guide", async () => {
+  for (
+    const oldUrl of [
+      "https://mempool.guide/api",
+      "https://MEMPOOL.GUIDE/api/",
+      "https://www.mempool.guide/api",
+      "https://mempool.guide./api",
+    ]
+  ) {
+    const state = emptyPublicState();
+    delete state.backendMigrationVersion;
+    state.settings.blakeApiUrl = oldUrl;
+    state.lastSyncAt = new Date().toISOString();
+    state.lastSyncError = "old backend error";
+    const repo = new MemoryWalletRepository(state);
+    await repo.saveSecret(await encryptedSecret());
+    const service = new WalletService(repo, () => {
+      throw new Error("Migration must not make network requests");
+    });
+    const snapshot = await service.initialize();
+    if (snapshot.settings.blakeApiUrl !== "https://mempool.kilombino.com/api") {
+      throw new Error("Backend not migrated");
+    }
+    const saved = await repo.loadState();
+    if (saved.lastSyncAt !== undefined || saved.lastSyncError !== undefined) {
+      throw new Error("Old freshness retained");
+    }
+    deepStrictEqual(saved, {
+      ...state,
+      backendMigrationVersion: 1,
+      settings: { ...state.settings, blakeApiUrl: "https://mempool.kilombino.com/api" },
+      lastSyncAt: undefined,
+      lastSyncError: undefined,
+    });
+    await service.updateSettings({ blakeApiUrl: "https://mempool.guide/api" });
+    if ((await repo.loadState()).settings.blakeApiUrl !== "https://mempool.guide/api") {
+      throw new Error("Explicit user choice overridden");
+    }
+    const restarted = new WalletService(
+      new MemoryWalletRepository(
+        parseWalletState(JSON.parse(JSON.stringify(await repo.loadState()))),
+      ),
+    );
+    if (
+      (await restarted.initialize()).settings.blakeApiUrl !== "https://mempool.guide/api"
+    ) throw new Error("Migration ran again on restart");
+  }
+});
+
+Deno.test("BLAKE backend migration preserves custom backends and defaults new wallets to Kilombino", async () => {
+  if (emptyPublicState().settings.blakeApiUrl !== "https://mempool.kilombino.com/api") {
+    throw new Error("Old default");
+  }
+  for (
+    const url of [
+      "https://custom.example/api",
+      "https://mempool.guide.example/api",
+      "https://mempool.kilombino.com/api",
+      "http://127.0.0.1:3000/api",
+    ]
+  ) {
+    const state = emptyPublicState();
+    state.settings.blakeApiUrl = url;
+    const repo = new MemoryWalletRepository(state);
+    const service = new WalletService(repo);
+    await service.initialize();
+    deepStrictEqual(await repo.loadState(), state);
+    if (service.snapshot().settings.blakeApiUrl !== url) throw new Error("Custom backend changed");
+  }
+});
+
+Deno.test("BLAKE backend migration marks existing custom backends without overriding later choices", async () => {
+  const state = emptyPublicState();
+  delete state.backendMigrationVersion;
+  state.settings.blakeApiUrl = "https://custom.example/api";
+  const repo = new MemoryWalletRepository(state);
+  const service = new WalletService(repo);
+  await service.initialize();
+  deepStrictEqual(await repo.loadState(), { ...state, backendMigrationVersion: 1 });
+  await service.updateSettings({ blakeApiUrl: "https://mempool.guide/api" });
+  const restarted = new WalletService(
+    new MemoryWalletRepository(parseWalletState(await repo.loadState())),
+  );
+  if ((await restarted.initialize()).settings.blakeApiUrl !== "https://mempool.guide/api") {
+    throw new Error("Migration must not override a choice made after first startup");
+  }
+});
