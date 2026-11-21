@@ -1,3 +1,4 @@
+import { BACKEND_MIGRATION_VERSION, DEFAULT_BLAKE_API_URL } from "./backend_urls.ts";
 export type ChainId = "blake" | "btc";
 export type AmountUnit = "sat" | "btc" | "bip177";
 export type WalletLockState = "empty" | "locked" | "unlocked";
@@ -182,6 +183,8 @@ export interface RecoveryScanProgress {
 
 export interface WalletPublicState {
   schema: 2;
+  /** Absent in older wallets. Separate from the storage format version. */
+  backendMigrationVersion?: number;
   nextPublicationIndex: number;
   publications: BpubPublication[];
   createdAt?: string;
@@ -291,7 +294,7 @@ export interface BroadcastResult {
 
 export const DEFAULT_SETTINGS: WalletSettings = {
   btcApiUrl: "https://mempool.space/api",
-  blakeApiUrl: "https://mempool.guide/api",
+  blakeApiUrl: DEFAULT_BLAKE_API_URL,
   amountUnit: "btc",
   btcConfirmations: 1,
   blakeConfirmations: 1,
@@ -301,6 +304,7 @@ export const DEFAULT_SETTINGS: WalletSettings = {
 export function emptyPublicState(): WalletPublicState {
   return {
     schema: 2,
+    backendMigrationVersion: BACKEND_MIGRATION_VERSION,
     nextPublicationIndex: 0,
     publications: [],
     recoveryPhraseAcknowledged: false,
