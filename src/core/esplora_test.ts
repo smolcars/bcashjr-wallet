@@ -688,3 +688,62 @@ Deno.test("Esplora timeout includes a stalled successful response body", async (
   }
   if (Date.now() - started > 1_000) throw new Error("Body timeout took too long");
 });
+
+Deno.test("Esplora preserves transaction rejection reasons without retrying", async () => {
+  const reason = "txn-datacarrier-exceeded";
+  for (
+    const body of [
+      reason,
+      JSON.stringify({ message: reason }),
+      JSON.stringify({ error: { code: -26, message: reason } }),
+      JSON.stringify({ error: reason }),
+      `sendrawtransaction RPC error: {"code":-26,"message":"${reason}"}`,
+    ]
+  ) {
+    for (const testOnly of [false, true]) {
+      let requests = 0;
+      const client = new EsploraClient("https://example.invalid/api", (_input, init) => {
+        requests++;
+        if (init?.method !== "POST") throw new Error("Expected POST");
+        return Promise.resolve(new Response(body, { status: 400 }));
+      });
+      let caught: unknown;
+      try {
+        if (testOnly) await client.testMempoolAcceptance("00");
+        else await client.broadcast("00");
+      } catch (error) {
+        caught = error;
+      }
+      if (
+        !(caught instanceof EsploraError) || caught.status !== 400 || caught.body !== body ||
+        !caught.message.includes(reason) || requests !== 1
+      ) {
+        throw new Error("Lost rejection reason, status or body, or retried submission");
+      }
+    }
+  }
+});
+
+Deno.test("Esplora bounds transaction errors and omits HTML and empty details", async () => {
+  for (
+    const [body, expected] of [
+      ["", "Esplora request failed (502)"],
+      ["<html><body>Bad Gateway</body></html>", "Esplora request failed (502)"],
+      [JSON.stringify({ unrelated: true }), "Esplora request failed (502)"],
+      ["rejected\n\tfor policy", "Esplora request failed (502): rejected for policy"],
+      ["x".repeat(1000), `Esplora request failed (502): ${"x".repeat(500)}\u2026`],
+    ]
+  ) {
+    const client = new EsploraClient(
+      "https://example.invalid/api",
+      () => Promise.resolve(new Response(body, { status: 502 })),
+    );
+    let message = "";
+    try {
+      await client.broadcast("00");
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    if (message !== expected) throw new Error(`Unexpected error detail: ${message}`);
+  }
+});
