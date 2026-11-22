@@ -11,9 +11,10 @@ import type {
   WalletSnapshot,
 } from "../core/types.ts";
 import type { CreatedWallet } from "../core/wallet_service.ts";
+import { callDesktopJson } from "../desktop_json.ts";
 
 interface WalletBindings {
-  walletRpc(request: { method: string; payload?: unknown }): Promise<unknown>;
+  walletRpc(request: string): Promise<string>;
 }
 
 const BROWSER_CAPABILITY_KEY = "bcashjr-rpc-capability";
@@ -35,7 +36,7 @@ function browserCapability(): string {
 async function call<T>(method: string, payload?: unknown): Promise<T> {
   const bindings = (globalThis as unknown as { bindings?: WalletBindings }).bindings;
   if (bindings?.walletRpc) {
-    return await bindings.walletRpc({ method, payload }) as T;
+    return await callDesktopJson<T>((request) => bindings.walletRpc(request), { method, payload });
   }
   const response = await fetch("/rpc", {
     method: "POST",

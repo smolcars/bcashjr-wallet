@@ -1,16 +1,11 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
+import { callDesktopJson } from "../desktop_json.ts";
 import "./styles.css";
 
 interface DesktopBindings {
-  fitDesktopWindow(screen: {
-    availWidth: number;
-    availHeight: number;
-    availLeft: number;
-    availTop: number;
-    devicePixelRatio: number;
-  }): Promise<unknown>;
+  fitDesktopWindow(screen: string): Promise<string>;
   focusDesktopContent(): Promise<unknown>;
 }
 
@@ -19,7 +14,7 @@ const desktopBindings = (globalThis as unknown as { bindings?: DesktopBindings }
 async function mountApp() {
   if (desktopBindings?.fitDesktopWindow) {
     const desktopScreen = screen as Screen & { availLeft?: number; availTop?: number };
-    await desktopBindings.fitDesktopWindow({
+    await callDesktopJson((request) => desktopBindings.fitDesktopWindow(request), {
       availWidth: desktopScreen.availWidth,
       availHeight: desktopScreen.availHeight,
       availLeft: desktopScreen.availLeft ?? 0,
