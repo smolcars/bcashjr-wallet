@@ -1,4 +1,5 @@
 import { acquireWalletDirectoryLock, FileWalletRepository } from "./src/core/storage.ts";
+import { desktopJsonHandler } from "./src/desktop_json.ts";
 import { type AvailableScreenArea, fitWindowToScreen } from "./src/desktop_window.ts";
 import type {
   BpubPreviewRequest,
@@ -128,21 +129,24 @@ if (BrowserWindow) {
       console.warn("Could not apply the native desktop title-bar colors");
     }
   }).catch((error) => console.warn("Could not apply the native desktop window colors", error));
-  window.bind<RpcRequest>("walletRpc", dispatch);
+  window.bind<string>("walletRpc", desktopJsonHandler(dispatch));
   let fittedToScreen = false;
-  window.bind<DesktopScreenMetrics>("fitDesktopWindow", (screen) => {
-    if (!fittedToScreen) {
-      const nativeScaleFactor = Deno.build.os === "windows" ? screen.devicePixelRatio : 1;
-      const geometry = fitWindowToScreen(screen, nativeScaleFactor);
-      if (geometry) {
-        window.setSize(geometry.width, geometry.height);
-        window.setPosition(geometry.x, geometry.y);
-        fittedToScreen = true;
+  window.bind<string>(
+    "fitDesktopWindow",
+    desktopJsonHandler((screen: DesktopScreenMetrics) => {
+      if (!fittedToScreen) {
+        const nativeScaleFactor = Deno.build.os === "windows" ? screen.devicePixelRatio : 1;
+        const geometry = fitWindowToScreen(screen, nativeScaleFactor);
+        if (geometry) {
+          window.setSize(geometry.width, geometry.height);
+          window.setPosition(geometry.x, geometry.y);
+          fittedToScreen = true;
+        }
       }
-    }
-    window.focus();
-    return null;
-  });
+      window.focus();
+      return null;
+    }),
+  );
   window.bind("focusDesktopContent", () => {
     try {
       return focusWindowsWebview();
