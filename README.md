@@ -42,12 +42,13 @@ return to the wallet, unlike ordinary sweep-only sends.
 BPUB funding inputs require at least one BLAKE confirmation, even when the general wallet setting
 allows unconfirmed spending. This is rechecked before signing.
 
-A publication can use up to 500 reveal inputs: 217,000 bytes (about 212 KiB) for the encoded stream,
-including headers and metadata. Lossless compression can allow larger original pictures; review
-rejects pictures that exceed encoded capacity. There is no separate original-file size cap. Large
-funding/reveal pairs that exceed the default 101,000-vbyte unconfirmed-chain limit wait for funding
-confirmation. Use **Check / Resume** after it confirms to broadcast the saved reveal. A full
-500-input reveal also exceeds Knots' default 300 KB raw mining template; inclusion requires a miner
+Publications have room for about 106 KB after compression, including headers and metadata.
+The encoded picture and required witness padding must fit within the transaction weight limit.
+Review checks the exact capacity and rejects pictures that exceed it.
+Lossless compression can allow larger original pictures; there is no separate original-file size cap.
+Large funding/reveal pairs that exceed the default 101,000-vbyte unconfirmed-chain limit wait for
+funding confirmation. Use **Check / Resume** after it confirms to broadcast the saved reveal.
+Large reveals can also exceed Knots' default 300 KB raw mining template; inclusion requires a miner
 using a larger template within the chain's block-weight budget.
 
 The original file, including embedded metadata, becomes public. BPUB v5 requires a separate
