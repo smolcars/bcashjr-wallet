@@ -1,6 +1,7 @@
 import { RawTx, Transaction } from "@scure/btc-signer";
 import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
 import { bpubDataScripts, decodeBpub, parseBpubScript } from "../bpub/mod.ts";
+import { BPUB_MAX_REVEAL_INPUTS } from "./bpub_limits.ts";
 import { Bip86Keychain } from "./keys.ts";
 import {
   bpubCompression,
@@ -85,7 +86,15 @@ Deno.test("BPUB funding and reveal preserve amounts and sign every input with un
     control.fill(0);
     const recoveredKeys: Uint8Array[] = [];
     for (let i = 0; i < count; i++) {
-      const [dummy, signature, script] = reveal.witnesses![i].slice(-3);
+      if (reveal.witnesses![i].length !== 3) {
+        throw new Error("padv3 reveal witness must have exactly 3 items");
+      }
+      if (
+        funding.outputs[i].amount < 547n || funding.outputs[i].amount !== funding.outputs[0].amount
+      ) {
+        throw new Error("padv3 funding outputs must use uniform O(n) >= 547 sat sizing");
+      }
+      const [dummy, signature, script] = reveal.witnesses![i];
       if (
         dummy.length || signature.at(-1) !== 0x21 || toHex(script) !== toHex(payload.scripts[i])
       ) throw new Error("Wrong reveal witness");
@@ -99,7 +108,9 @@ Deno.test("BPUB funding and reveal preserve amounts and sign every input with un
       if (!secp256k1.verify(signature.slice(0, -1), hash, pub, { prehash: false, format: "der" })) {
         throw new Error("Bad ECDSA reveal signature");
       }
-      recoveredKeys.push(...parseBpubScript(script).keys.slice(0, -1));
+      const parsed = parseBpubScript(script);
+      if (parsed.padding !== "padv3") throw new Error("Expected padv3 script");
+      recoveredKeys.push(...parsed.keys.slice(0, -1));
     }
     if (toHex(decodeBpub(recoveredKeys, bpubCompression, 131072).data) !== toHex(image)) {
       throw new Error("Reveal did not recover the picture");
@@ -183,7 +194,7 @@ Deno.test("BPUB 96 KiB incompressible picture fits the reviewed relay limits", (
       payload,
     );
     if (
-      payload.scripts.length < 220 || payload.scripts.length > 240 ||
+      payload.scripts.length < 310 || payload.scripts.length > 330 ||
       template.revealVsize > 100000 || template.fundingVsize > 100000
     ) {
       throw new Error("Unexpected maximum-size transaction limits");
@@ -201,8 +212,10 @@ Deno.test("BPUB enforces encoded capacity and permits larger compressible origin
     compressible.set(image);
     validateBpubImage(compressible, "image/gif", "compressible.gif");
     const small = makeBpubPayload(compressible, "compressible.gif", "image/gif", keys, 0);
-    if (small.scripts.length >= 500) throw new Error("Compression did not reduce input count");
-    const large = new Uint8Array(217000);
+    if (small.scripts.length >= BPUB_MAX_REVEAL_INPUTS) {
+      throw new Error("Compression did not reduce input count");
+    }
+    const large = new Uint8Array(200000);
     let seed = 1;
     for (let i = 0; i < large.length; i++) {
       seed ^= seed << 13;
@@ -225,7 +238,7 @@ Deno.test("BPUB enforces encoded capacity and permits larger compressible origin
         a.address,
         1,
         0,
-        { ...small, scripts: Array(501).fill(small.scripts[0]) },
+        { ...small, scripts: Array(BPUB_MAX_REVEAL_INPUTS + 1).fill(small.scripts[0]) },
       )
     );
   } finally {
@@ -233,10 +246,10 @@ Deno.test("BPUB enforces encoded capacity and permits larger compressible origin
   }
 });
 
-Deno.test("BPUB padded capacity gives resize guidance without reducing legacy limits", () => {
+Deno.test("BPUB padv3 capacity gives resize guidance, uses O(n) funding and keeps legacy limits", () => {
   const keys = keychain();
   try {
-    const data = new Uint8Array(110000);
+    const data = new Uint8Array(199100);
     let seed = 1;
     for (let i = 0; i < data.length; i++) {
       seed ^= seed << 13;
@@ -263,7 +276,17 @@ Deno.test("BPUB padded capacity gives resize guidance without reducing legacy li
     if (
       !message.includes("after compression and metadata; resize it or choose a smaller picture")
     ) {
-      throw new Error("Oversized padded reveal must explain how to make the picture fit");
+      throw new Error("Oversized padv3 reveal must explain how to make the picture fit");
+    }
+    // 180 KB incompressible fits comfortably under padv3 (well above padv2's ~106 KB cap)
+    // and uses O(n) uniform 547-sat outputs rather than quadratic staggering.
+    const fits = makeBpubPayload(data.slice(0, 180000), "fits.gif", "image/gif", keys, 0);
+    const padv3Template = createBpubTemplate(coins, a.address, 1, 0, fits);
+    if (
+      padv3Template.revealVsize > 100000 ||
+      padv3Template.dataValue !== fits.scripts.length * 547
+    ) {
+      throw new Error("padv3 180 KB publication did not fit or used staggered outputs");
     }
     const parsed = parseBpubScript(payload.scripts[0]);
     const legacy = bpubDataScripts(parsed.keys.slice(0, -1), parsed.keys.at(-1)!, true)[0];

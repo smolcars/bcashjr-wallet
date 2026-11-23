@@ -133,7 +133,7 @@ export function BpubScreen({ snapshot, active, busy, setBusy, setSnapshot, onErr
           replay protection; your BTC copies are not spent.
         </p>
         <p>
-          Supports one picture per publication, with room for about 106 KB after compression,
+          Supports one picture per publication, with room for about 199 KB after compression,
           including metadata. The exact capacity is checked when you review the publication. Larger
           originals can fit if they compress enough. The original file and its embedded metadata
           become public, so only publish content you intend to share permanently.
@@ -167,7 +167,7 @@ export function BpubScreen({ snapshot, active, busy, setBusy, setSnapshot, onErr
         </p>
         <h3>The wallet adds a key it can spend with</h3>
         <p>
-          Up to 14 data-carrying keys are placed alongside one wallet-controlled key in each 1-of-N
+          Up to 10 data-carrying keys are placed alongside one wallet-controlled key in each 1-of-N
           multisig witness script. Only one signature is needed, so the wallet can spend using its
           own key without knowing the private keys of the data-carrying keys.
         </p>
@@ -220,7 +220,7 @@ export function BpubScreen({ snapshot, active, busy, setBusy, setSnapshot, onErr
             {picture ? "Change picture" : "Choose picture"}
           </button>
           <p className="muted">
-            PNG, JPEG, GIF or WebP · about 106 KB after compression · capacity checked at review
+            PNG, JPEG, GIF or WebP · about 199 KB after compression · capacity checked at review
           </p>
           {picture && (
             <figure className="bpub-picture">

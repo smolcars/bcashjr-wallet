@@ -7,7 +7,7 @@ GiB RAM recommended). Both Linux amd64 CI and macOS arm64 Docker are supported.
 The runner builds and starts six services:
 
 - Bitcoin Core 29.0 (official binaries, pinned SHA-256 per architecture).
-- Bitcoin Knots 29.4.1.knots20260508 (official binaries, pinned SHA-256), activating BLAKE2b at
+- Bitcoin Knots 29.5.1.knots20260508 (official binaries, pinned SHA-256), activating BLAKE2b at
   regtest height 110 with an isolated test headline and active reduced-data rules.
 - Two electrs instances, pinned to jasonsopko/electrs commit
   `3c812c618230d967f32b3358f6e0615ff123a9aa`, which understands 164-byte BLAKE headers.

@@ -169,9 +169,9 @@ Deno.test({
         );
       });
       await step(
-        "Padded BPUB waits, survives restart, is accepted and recovers exact bytes",
+        "padv3 BPUB waits, survives restart, is accepted and recovers exact bytes",
         async () => {
-          const data = picture(104000);
+          const data = picture(170000);
           const s = service!.snapshot();
           const preview = await service!.previewBpub({
             filename: "regtest.gif",
@@ -236,9 +236,12 @@ Deno.test({
             (s) => s.publications[0].revealPhase === "confirmed",
           );
           const raw = RawTx.decode(fromHex(await clients.blake.transactionHex(reveal.txid)));
-          const dataKeys = raw.witnesses!.flatMap((w) =>
-            parseBpubScript(w.at(-1)!).keys.slice(0, -1)
-          );
+          const dataKeys = raw.witnesses!.flatMap((w) => {
+            assert(w.length === 3, "Expected standard 3-item padv3 witness");
+            const parsed = parseBpubScript(w.at(-1)!);
+            assert(parsed.padding === "padv3", `Expected padv3 script, got ${parsed.padding}`);
+            return parsed.keys.slice(0, -1);
+          });
           assert(
             toHex(decodeBpub(dataKeys, bpubCompression, data.length).data) === toHex(data),
             "Published content changed",

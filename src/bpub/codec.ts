@@ -81,7 +81,7 @@ export function encodeDataKeys(stream: Uint8Array): Uint8Array[] {
   return result;
 }
 
-/** BPUB reference: djkazic/bpub @ 8b1ff26adf336bbd6a0e8a9f0a8b90f7323cbc62. */
+/** BPUB reference: djkazic/bpub @ be8ba03b6ca7ed3d8239bffbd6591d3708c932f8. */
 export function encodeBpub(
   data: Uint8Array,
   options: { mime?: string; filename?: string; compress?: boolean; maxStreamBytes?: number },
@@ -159,6 +159,9 @@ export function decodeBpub(
   return { metadata, data };
 }
 
+export type BpubPadding = "none" | "padv1" | "padv2" | "padv3" | "unknown";
+
+const BPUB_PAD_V3 = Uint8Array.from([0x51, 0x87]);
 const BPUB_PAD_V2 = Uint8Array.from([
   0x6b,
   0x82,
@@ -183,8 +186,8 @@ const BPUB_PAD_V1 = Uint8Array.from([
   0x68,
 ]);
 
-/** Recognize historical scripts for spending; unknown suffixes are unsafe to sign. */
-export function parseBpubScript(script: Uint8Array) {
+/** Recognize current and historical scripts for spending; unknown suffixes are unsafe to sign. */
+export function parseBpubScript(script: Uint8Array): { keys: Uint8Array[]; padding: BpubPadding } {
   let offset = 1;
   const keys: Uint8Array[] = [];
   if (script[0] !== 0x51) throw new Error("Invalid BPUB multisig");
@@ -199,8 +202,10 @@ export function parseBpubScript(script: Uint8Array) {
     script[offset + 1] !== 0xae
   ) throw new Error("Invalid BPUB multisig");
   const suffix = script.slice(offset + 2);
-  const padding = !suffix.length
+  const padding: BpubPadding = !suffix.length
     ? "none"
+    : hex(suffix) === hex(BPUB_PAD_V3)
+    ? "padv3"
     : hex(suffix) === hex(BPUB_PAD_V2)
     ? "padv2"
     : hex(suffix) === hex(BPUB_PAD_V1)
@@ -212,7 +217,7 @@ export function parseBpubScript(script: Uint8Array) {
 export function bpubPaddingItems(script: Uint8Array): Uint8Array[] {
   const { padding } = parseBpubScript(script);
   if (padding === "unknown") throw new Error("Unsupported BPUB script suffix");
-  if (padding === "none") return [];
+  if (padding === "none" || padding === "padv3") return [];
   return Array.from({ length: 13 }, (_, i) => {
     const seed = sha512(
       concat(new TextEncoder().encode("BPUB-PAD-ITEM"), script, Uint8Array.of(i)),
@@ -234,12 +239,18 @@ export function bpubPaddingItems(script: Uint8Array): Uint8Array[] {
 export function bpubDataScripts(
   publicKeys: Uint8Array[],
   controlKey: Uint8Array,
-  legacy = false,
+  legacy: boolean | "none" | "padv2" | "padv3" = false,
 ): Uint8Array[] {
   if (controlKey.length !== 33 || !publicKeys.length) throw new Error("Invalid BPUB keys");
   secp256k1.Point.fromBytes(controlKey);
-  return Array.from({ length: Math.ceil(publicKeys.length / 14) }, (_, index) => {
-    const keys = [...publicKeys.slice(index * 14, index * 14 + 14), controlKey];
+  const mode = legacy === true ? "none" : legacy === false ? "padv3" : legacy;
+  const maxDataKeys = mode === "padv3" ? 10 : 14;
+  const suffix = mode === "padv3" ? BPUB_PAD_V3 : mode === "padv2" ? BPUB_PAD_V2 : new Uint8Array();
+  return Array.from({ length: Math.ceil(publicKeys.length / maxDataKeys) }, (_, index) => {
+    const keys = [
+      ...publicKeys.slice(index * maxDataKeys, index * maxDataKeys + maxDataKeys),
+      controlKey,
+    ];
     for (const key of keys) {
       if (key.length !== 33) throw new Error("Invalid BPUB data key");
       secp256k1.Point.fromBytes(key);
@@ -248,7 +259,7 @@ export function bpubDataScripts(
       Uint8Array.of(0x51),
       ...keys.map((key) => concat(Uint8Array.of(33), key)),
       Uint8Array.of(0x50 + keys.length, 0xae),
-      legacy ? new Uint8Array() : BPUB_PAD_V2,
+      suffix,
     );
   });
 }

@@ -146,8 +146,11 @@ export function createBpubTemplate(
   if (
     count < 1 || count > BPUB_MAX_REVEAL_INPUTS || payload.scripts.some((s) => s.length > 541) ||
     payload.scripts.reduce(
-        (n, s) =>
-          n + parseBpubScript(s).keys.length + (parseBpubScript(s).padding === "none" ? 0 : 13),
+        (n, s) => {
+          const parsed = parseBpubScript(s);
+          const extraSigops = parsed.padding === "padv1" || parsed.padding === "padv2" ? 13 : 0;
+          return n + parsed.keys.length + extraSigops;
+        },
         0,
       ) > 16000
   ) {
@@ -169,12 +172,9 @@ export function createBpubTemplate(
     "Picture exceeds BPUB publication capacity after compression and metadata; resize it or choose a smaller picture",
   );
   const revealFee = Math.ceil(revealVsize * feeRate);
-  const baseValue = Math.max(
-    546,
-    Math.ceil(450 * feeRate + Math.ceil((134 * feeRate + 546) / count)),
-  );
-  const values = payload.scripts.map((_, index) => baseValue + index);
-  const dataValue = values.reduce((sum, value) => sum + value, 0);
+  const baseValue = Math.max(547, Math.ceil((revealFee + 330) / count));
+  const values = payload.scripts.map(() => baseValue);
+  const dataValue = baseValue * count;
   const funding: UnifiedTransaction = {
     ...sweep.tx,
     outputs: [
@@ -198,6 +198,9 @@ export function createBpubTemplate(
   const fundingTxid = fromHex(bpubTxid(funding));
   for (const input of reveal.inputs) input.txid = fundingTxid;
   const revealReturn = dataValue - revealFee;
+  if (revealReturn < 330) {
+    throw new Error("BPUB reveal return falls below the dust threshold");
+  }
   reveal.outputs[0].amount = BigInt(revealReturn);
   return {
     funding,

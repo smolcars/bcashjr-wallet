@@ -42,12 +42,12 @@ return to the wallet, unlike ordinary sweep-only sends.
 BPUB funding inputs require at least one BLAKE confirmation, even when the general wallet setting
 allows unconfirmed spending. This is rechecked before signing.
 
-Publications have room for about 106 KB after compression, including headers and metadata.
-The encoded picture and required witness padding must fit within the transaction weight limit.
-Review checks the exact capacity and rejects pictures that exceed it.
-Lossless compression can allow larger original pictures; there is no separate original-file size cap.
-Large funding/reveal pairs that exceed the default 101,000-vbyte unconfirmed-chain limit wait for
-funding confirmation. Use **Check / Resume** after it confirms to broadcast the saved reveal.
+Publications have room for about 199 KB after compression, including headers and metadata. The
+encoded picture uses the `padv3` 1-of-11 script layout and must fit within the 400,000-weight
+standard transaction limit. Review checks the exact capacity and rejects pictures that exceed it.
+Lossless compression can allow larger original pictures; there is no separate original-file size
+cap. Large funding/reveal pairs that exceed the default 101,000-vbyte unconfirmed-chain limit wait
+for funding confirmation. Use **Check / Resume** after it confirms to broadcast the saved reveal.
 Large reveals can also exceed Knots' default 300 KB raw mining template; inclusion requires a miner
 using a larger template within the chain's block-weight budget.
 
@@ -64,7 +64,7 @@ publication backup/export feature.
 
 The portable BPUB codec lives in [`src/bpub`](./src/bpub/README.md), separate from wallet signing
 and storage, for future extraction into a JSR/npm library. The reference format is
-[BPUB v5](https://github.com/djkazic/bpub/tree/8b1ff26adf336bbd6a0e8a9f0a8b90f7323cbc62). Wallet
+[BPUB v5](https://github.com/djkazic/bpub/tree/be8ba03b6ca7ed3d8239bffbd6591d3708c932f8). Wallet
 public-state schema 1 is migrated to schema 2; older wallet versions cannot open schema 2.
 
 ## Transaction safety
@@ -202,7 +202,7 @@ The first run downloads and compiles dependencies and can take several minutes. 
 `deno task test` skips this Docker suite.
 
 The suite receives the same pre-fork deposit on both chains, splits with `SIGHASH_UNIFIED`, checks
-Core replay rejection, and publishes a 500-input BPUB picture through the real mempool API. It
+Core replay rejection, and publishes a large `padv3` BPUB picture through the real mempool API. It
 checks ancestor-limit rejection, funding confirmation, restart/resume from disk, reveal acceptance,
 and exact content recovery. See [the integration setup](tests/integration/README.md) for details.
 
