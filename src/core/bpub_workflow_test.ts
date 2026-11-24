@@ -554,9 +554,9 @@ Deno.test("BPUB state migration preserves schema-1 wallets and rejects damaged p
   }
 });
 
-Deno.test("Large padded publication persists across restart and waits for funding confirmation", async () => {
+Deno.test("Large padv3 publication persists across restart and waits for funding confirmation", async () => {
   const f = await fixture(2_000_000);
-  const data = new Uint8Array(104000);
+  const data = new Uint8Array(170000);
   let seed = 1;
   for (let i = 0; i < data.length; i++) {
     seed ^= seed << 13;

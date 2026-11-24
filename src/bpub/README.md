@@ -9,5 +9,5 @@ Encoding, decoding, content IDs and BPUB script construction live here. BLAKE si
 selection and publication persistence belong to `src/core`. This boundary is intended for extraction
 into a JSR/npm package; nothing is published as part of this feature.
 
-Wire-format reference: djkazic/bpub commit `7908f833b50e4e83945f143c567496f6b5027b89`,
+Wire-format reference: djkazic/bpub commit `be8ba03b6ca7ed3d8239bffbd6591d3708c932f8`,
 docs/01_spec.md and bpub.py.

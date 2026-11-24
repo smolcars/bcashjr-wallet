@@ -7,10 +7,11 @@ GiB RAM recommended). Both Linux amd64 CI and macOS arm64 Docker are supported.
 The runner builds and starts six services:
 
 - Bitcoin Core 29.0 (official binaries, pinned SHA-256 per architecture).
-- Bitcoin Knots 29.4.1.knots20260508 (official binaries, pinned SHA-256), activating BLAKE2b at
+- Bitcoin Knots 29.5.1.knots20260508 (official binaries, pinned SHA-256), activating BLAKE2b at
   regtest height 110 with an isolated test headline and active reduced-data rules.
 - Two electrs instances, pinned to jasonsopko/electrs commit
-  `3c812c618230d967f32b3358f6e0615ff123a9aa`, which understands 164-byte BLAKE headers.
+  `e04e87459b19333dc25e4610588ba40ca5babf1a`, which understands 164-byte BLAKE headers
+  and advertises `NODE_BLAKE2B`, required by Knots 29.4.3 and later to serve post-fork blocks.
 - Two real mempool API backends, pinned to Retropex/mempool commit
   `4878106c1df7975f9fa14e6d3dd5db956b49e4fb`. These provide the Esplora-compatible wallet endpoints
   and mempool acceptance endpoint using node RPC and electrs. Database, pricing and Lightning

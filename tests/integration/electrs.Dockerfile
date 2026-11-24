@@ -1,6 +1,6 @@
 FROM rust:1.85-bookworm AS build
 RUN apt-get update && apt-get install -y --no-install-recommends clang cmake librocksdb-dev && rm -rf /var/lib/apt/lists/*
-ARG REV=3c812c618230d967f32b3358f6e0615ff123a9aa
+ARG REV=e04e87459b19333dc25e4610588ba40ca5babf1a
 RUN git clone https://github.com/jasonsopko/electrs /src && cd /src && git checkout "$REV"
 WORKDIR /src
 ENV ROCKSDB_INCLUDE_DIR=/usr/include

@@ -80,19 +80,37 @@ Deno.test("BPUB encoder accepts only metadata its decoder can inflate", () => {
   if (!rejected) throw new Error("Encoder accepted metadata beyond the decoder's limit");
 });
 
-Deno.test("BPUB padding uses the upstream v2 suffix and deterministic DER-shaped items", () => {
+Deno.test("BPUB padv3 uses 1-of-11 scripts with OP_1 OP_EQUAL and zero padding items", () => {
   const control = fromHex(fixtures.control);
-  const script = bpubDataScripts([control], control)[0];
+  const dataKeys = Array.from({ length: 11 }, () => control);
+  const scripts = bpubDataScripts(dataKeys, control);
+  if (scripts.length !== 2) throw new Error("padv3 must chunk at 10 data keys per script");
+  const first = parseBpubScript(scripts[0]);
+  const second = parseBpubScript(scripts[1]);
+  if (
+    first.padding !== "padv3" || first.keys.length !== 11 ||
+    second.padding !== "padv3" || second.keys.length !== 2
+  ) throw new Error("Wrong padv3 key count or mode");
+  const legacy = bpubDataScripts([control], control, true)[0];
+  const single = bpubDataScripts([control], control)[0];
+  if (hex(single.slice(legacy.length)) !== "5187") throw new Error("Wrong padv3 suffix");
+  if (bpubPaddingItems(single).length !== 0 || bpubPaddingItems(legacy).length !== 0) {
+    throw new Error("padv3 and legacy scripts must not add witness padding items");
+  }
+});
+
+Deno.test("BPUB legacy padv2/padv1 parsing and deterministic DER-shaped padding remain supported", () => {
+  const control = fromHex(fixtures.control);
+  const script = bpubDataScripts([control], control, "padv2")[0];
   const legacy = bpubDataScripts([control], control, true)[0];
   if (
     hex(script.slice(legacy.length)) !==
       "6b8201408764" + "ac".repeat(13) + "68" + "6d".repeat(6) + "756c"
   ) throw new Error("Wrong v2 suffix");
   const pads = bpubPaddingItems(script);
-  if (
-    pads.length !== 13 || parseBpubScript(script).padding !== "padv2" ||
-    bpubPaddingItems(legacy).length
-  ) throw new Error("Wrong padding mode");
+  if (pads.length !== 13 || parseBpubScript(script).padding !== "padv2") {
+    throw new Error("Wrong v2 padding mode");
+  }
   for (const pad of pads) {
     if (
       pad.length !== 64 || hex(pad.slice(0, 4)) !== "303d021c" ||
@@ -104,4 +122,31 @@ Deno.test("BPUB padding uses the upstream v2 suffix and deterministic DER-shaped
     pads.map(hex).join() !== bpubPaddingItems(script).map(hex).join() ||
     new Set(pads.map(hex)).size !== 13
   ) throw new Error("Padding is not deterministic and distinct");
+
+  const padv1 = new Uint8Array([
+    ...legacy,
+    0x6b,
+    ...Array(6).fill(0x6d),
+    0x75,
+    0x6c,
+    0x51,
+    0x64,
+    ...Array(13).fill(0xac),
+    0x68,
+  ]);
+  if (parseBpubScript(padv1).padding !== "padv1" || bpubPaddingItems(padv1).length !== 13) {
+    throw new Error("Historical padv1 script was not recognized");
+  }
+
+  const unknown = new Uint8Array([...legacy, 0x6a]);
+  if (parseBpubScript(unknown).padding !== "unknown") {
+    throw new Error("Unknown suffix must be classified as unknown");
+  }
+  let rejected = false;
+  try {
+    bpubPaddingItems(unknown);
+  } catch {
+    rejected = true;
+  }
+  if (!rejected) throw new Error("Unknown suffix must not produce padding items");
 });
